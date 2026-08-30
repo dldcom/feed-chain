@@ -1,0 +1,25 @@
+{
+  "name": "feed-chain",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build -w @feed-chain/shared && concurrently -n server,client -c yellow,cyan \"npm run dev -w @feed-chain/server\" \"npm run dev -w @feed-chain/client\"",
+    "build": "npm run build -w @feed-chain/shared && npm run build -w @feed-chain/server && npm run build -w @feed-chain/client",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "test": "npm run build -w @feed-chain/shared && vitest run tests/rules",
+    "test:watch": "vitest tests/rules",
+    "test:e2e": "playwright test",
+    "test:multiplayer": "node scripts/smoke-multiplayer.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "concurrently": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
