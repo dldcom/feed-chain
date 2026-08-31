@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 
-export function VirtualJoystick(): JSX.Element {
+export function VirtualJoystick({ onInput }: { onInput?: (x: number, y: number) => void } = {}): JSX.Element {
   const baseRef = useRef<HTMLDivElement>(null);
   const pointerId = useRef<number | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const setInput = useGameStore((state) => state.setInput);
+  const applyInput = onInput ?? setInput;
 
   const update = (clientX: number, clientY: number): void => {
     const rect = baseRef.current?.getBoundingClientRect();
@@ -19,13 +20,13 @@ export function VirtualJoystick(): JSX.Element {
       y = (y / length) * radius;
     }
     setKnob({ x, y });
-    setInput(x / radius, y / radius);
+    applyInput(x / radius, y / radius);
   };
 
   const stop = (): void => {
     pointerId.current = null;
     setKnob({ x: 0, y: 0 });
-    setInput(0, 0);
+    applyInput(0, 0);
   };
 
   return (
@@ -49,4 +50,3 @@ export function VirtualJoystick(): JSX.Element {
     </div>
   );
 }
-

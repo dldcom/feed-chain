@@ -13,6 +13,7 @@ const GameScreen = lazy(() => import("./screens/GameScreen").then((module) => ({
 const FoodWebScreen = lazy(() => import("./screens/FoodWebScreen").then((module) => ({ default: module.FoodWebScreen })));
 const ExperimentPlaybackScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.ExperimentPlaybackScreen })));
 const FinalResultsScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.FinalResultsScreen })));
+const GameTestScreen = lazy(() => import("./screens/GameTestScreen").then((module) => ({ default: module.GameTestScreen })));
 
 function CurrentScreen(): JSX.Element {
   const snapshot = useGameStore((state) => state.snapshot);
@@ -36,13 +37,18 @@ export default function App(): JSX.Element {
   const role = useGameStore((state) => state.role);
   const connecting = useGameStore((state) => state.connecting);
   const setConnecting = useGameStore((state) => state.setConnecting);
+  const isGameTest = window.location.pathname === "/game-test";
 
   useEffect(() => {
-    if (!room && sessionStorage.getItem("feed-chain-reconnection")) {
+    if (!isGameTest && !room && sessionStorage.getItem("feed-chain-reconnection")) {
       setConnecting(true);
       void reconnectClass().finally(() => setConnecting(false));
     }
   }, []);
+
+  if (isGameTest) {
+    return <Suspense fallback={<IntermissionScreen icon="🧭" title="테스트 맵을 펼치는 중" copy="역할과 스킬을 준비하고 있어요." />}><GameTestScreen /></Suspense>;
+  }
 
   if (!room) return <><LandingScreen />{connecting && <div className="reconnect-cover">생태계로 다시 연결 중…</div>}<RotateNotice /></>;
 

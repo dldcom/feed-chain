@@ -420,3 +420,65 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .forest-backdrop { display: flex; align-items: end; justify-content: space-around; height: 145px; letter-spacing: 0; }
 .forest-backdrop .pixel-species-icon { width: clamp(78px, 9vw, 128px); height: clamp(78px, 9vw, 128px); filter: drop-shadow(8px 10px 0 #173f2b); }
 .forest-backdrop .pixel-species-icon:nth-child(3n + 2) { width: clamp(62px, 7vw, 98px); height: clamp(62px, 7vw, 98px); }
+
+/* Standalone game test page --------------------------------------------- */
+.game-test-screen { position: relative; overflow: hidden; background: #17382d; }
+.game-test-play-area { position: absolute; inset: 0 0 0 292px; overflow: hidden; }
+.game-test-canvas { position: absolute; inset: 0; }
+.game-test-role-panel { position: absolute; z-index: 20; inset: 0 auto 0 0; width: 292px; display: flex; flex-direction: column; padding: 19px 16px 16px; background: #0b2d25; border-right: 5px solid #061b16; box-shadow: 8px 0 0 #061b1655; overflow-y: auto; }
+.game-test-role-panel header small { color: #81b994; font-size: 9px; font-weight: 900; letter-spacing: 2px; }
+.game-test-role-panel header h1 { margin: 1px 0 3px; font-family: "Jua"; font-size: 31px; color: #ffe27a; }
+.game-test-role-panel header p { margin: 0 0 13px; color: #a9cbb8; font-size: 11px; line-height: 1.45; }
+.game-test-role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.game-test-role-grid button { min-width: 0; display: flex; align-items: center; gap: 5px; padding: 6px; text-align: left; color: #dcecdf; background: #153e32; border: 3px solid #1d5743; box-shadow: 0 3px 0 #061b16; }
+.game-test-role-grid button:hover { background: #1d513f; }
+.game-test-role-grid button.selected { color: #fff9dc; border-color: var(--role-color); background: #245d47; box-shadow: 0 0 0 2px #fff2a355, 0 4px 0 #061b16; }
+.game-test-role-grid .pixel-species-icon { width: 43px; height: 43px; }
+.game-test-role-grid span { min-width: 0; }
+.game-test-role-grid strong, .game-test-role-grid small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-test-role-grid strong { font-family: "Jua"; font-size: 14px; }
+.game-test-role-grid small { color: #9cc3ae; font-size: 8px; }
+.game-test-help { display: grid; gap: 5px; margin-top: 13px; padding: 10px; color: #b7d3c4; background: #12382d; border: 3px solid #174b39; font-size: 10px; }
+.game-test-help strong { color: #ffe27a; font-size: 12px; }
+.game-test-help span { display: flex; align-items: center; gap: 5px; }
+.game-test-help kbd { min-width: 42px; padding: 3px 5px; text-align: center; color: #18352c; background: #f4df91; border: 2px solid #8d7530; box-shadow: 0 2px 0 #554617; }
+.game-test-role-summary { display: grid; gap: 5px; margin-top: 9px; padding: 9px; color: #a9cbb8; background: #12382d; border: 2px solid #174b39; font-size: 9px; font-weight: 800; }
+.game-test-role-summary button { margin-top: 3px; padding: 7px; color: #17382d; background: #f1cf65; border: 2px solid #846a22; box-shadow: 0 3px 0 #4b3a12; font-size: 9px; font-weight: 900; }
+.game-test-exit { margin-top: auto; padding: 10px; text-align: center; color: #bdd8c8; font-size: 11px; font-weight: 900; text-decoration: none; background: #12382d; border: 2px solid #2c624d; }
+
+.game-test-status { position: absolute; z-index: 15; top: 16px; left: 310px; display: flex; align-items: center; gap: 11px; min-width: 520px; padding: 8px 10px; color: #f8ffe9; background: #0b2d25ec; border: 4px solid #061b16; box-shadow: 0 5px 0 #061b16aa; }
+.game-test-status > .pixel-species-icon { width: 52px; height: 52px; background-color: #ffffff0b; }
+.game-test-status small, .game-test-status strong, .game-test-status span { display: block; }
+.game-test-status small { color: #89b8a0; font-size: 8px; font-weight: 900; }
+.game-test-status strong { font-family: "Jua"; color: #fff0a2; font-size: 20px; }
+.game-test-status span { color: #a9cbb8; font-size: 9px; }
+.game-test-skill-state { min-width: 155px; margin-left: 8px; }
+.game-test-skill-state > div { width: 150px; height: 8px; margin-top: 3px; background: #061b16; border: 2px solid #174b39; }
+.game-test-skill-state i { display: block; height: 100%; background: #4ea9e7; transition: width .1s linear; }
+.game-test-status button { margin-left: auto; padding: 8px 10px; color: #17382d; background: #f1cf65; border: 3px solid #846a22; box-shadow: 0 3px 0 #4b3a12; font-size: 10px; font-weight: 900; }
+
+.game-test-controls { position: absolute; z-index: 16; right: 25px; bottom: 23px; left: 315px; display: flex; justify-content: space-between; align-items: end; pointer-events: none; }
+.game-test-controls button { pointer-events: auto; touch-action: none; }
+.game-test-dpad { position: relative; width: 150px; height: 150px; }
+.game-test-dpad button { position: absolute; display: grid; place-items: center; width: 54px; height: 54px; color: #fff4be; background: #173f33df; border: 4px solid #d5e7c788; box-shadow: 0 5px 0 #061b16; font-size: 22px; }
+.game-test-dpad button:active { transform: translateY(4px); box-shadow: 0 1px 0 #061b16; }
+.game-test-dpad .up { top: 0; left: 48px; }
+.game-test-dpad .left { top: 48px; left: 0; }
+.game-test-dpad .right { top: 48px; right: 0; }
+.game-test-dpad .down { bottom: 0; left: 48px; }
+.game-test-skill-button { width: 122px; height: 122px; display: grid; place-content: center; color: white; background: #3f83d1; border: 6px solid #08251e; box-shadow: 0 8px 0 #061b16, inset 0 -6px 0 #205c9e; text-shadow: 0 2px #173d2d; }
+.game-test-skill-button span, .game-test-skill-button strong { display: block; }
+.game-test-skill-button span { font-size: 38px; }
+.game-test-skill-button strong { max-width: 98px; font-family: "Jua"; font-size: 15px; }
+
+@media (max-width: 900px) {
+  .game-test-role-panel { width: 225px; }
+  .game-test-play-area { left: 225px; }
+  .game-test-canvas { left: 0; }
+  .game-test-role-grid { grid-template-columns: 1fr; }
+  .game-test-role-grid button { padding: 4px; }
+  .game-test-role-grid .pixel-species-icon { width: 35px; height: 35px; }
+  .game-test-status { left: 239px; min-width: 0; right: 12px; }
+  .game-test-status > .pixel-species-icon, .game-test-status > div:first-of-type span { display: none; }
+  .game-test-controls { left: 240px; }
+}

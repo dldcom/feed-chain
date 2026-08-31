@@ -12,22 +12,38 @@ import {
 import { movementRenderPose, tickMovementNetcode } from "../network/movementNetcode";
 import { useGameStore } from "../store/gameStore";
 import type { AnimalSnapshot, PlantSnapshot, PlayerSnapshot } from "../types";
+import {
+  RABBIT_FRAME_HEIGHT,
+  RABBIT_FRAME_WIDTH,
+  RABBIT_EAT_ATTEMPT_EVENT,
+  rabbitIdleFrame,
+  rabbitSickFrame,
+} from "./rabbitAnimations";
 
 interface PlayerVisual {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Arc;
   emoji: Phaser.GameObjects.Image;
+  rabbitSprite: Phaser.GameObjects.Sprite;
+  rabbitEffectRoot: Phaser.GameObjects.Container;
   label: Phaser.GameObjects.Text;
   status: Phaser.GameObjects.Text;
   direction: Phaser.GameObjects.Triangle;
   targetX: number;
   targetY: number;
+  speciesId: string;
+  rabbitAction: "sick" | null;
+  rabbitEatEffectStartedAt: number;
+  rabbitEatTween?: Phaser.Tweens.Tween;
+  rabbitActionTimer?: Phaser.Time.TimerEvent;
 }
+
+type AnimalVisual = Omit<PlayerVisual, "rabbitSprite" | "rabbitEffectRoot" | "speciesId" | "rabbitAction" | "rabbitActionTimer" | "rabbitEatEffectStartedAt" | "rabbitEatTween">;
 
 export class GameScene extends Phaser.Scene {
   private players = new Map<string, PlayerVisual>();
   private plants = new Map<string, Phaser.GameObjects.Container>();
-  private animals = new Map<string, PlayerVisual>();
+  private animals = new Map<string, AnimalVisual>();
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd?: Record<string, Phaser.Input.Keyboard.Key>;
   private boundary?: Phaser.GameObjects.Graphics;
@@ -35,6 +51,13 @@ export class GameScene extends Phaser.Scene {
   private targetRing?: Phaser.GameObjects.Arc;
   private targetHint?: Phaser.GameObjects.Text;
   private lastEffectId = 0;
+  private readonly onLocalEatAttempt = (): void => {
+    const state = useGameStore.getState();
+    const player = state.snapshot.players.find((entry) => entry.id === state.selfId);
+    const visual = this.players.get(state.selfId);
+    if (!player || !visual || player.species !== "rabbit") return;
+    this.playRabbitEatEffect(visual, player.facingX, player.facingY);
+  };
 
   constructor() {
     super("ecosystem");
@@ -42,6 +65,14 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     this.load.image("species-atlas", "/assets/pixel/species-atlas.png");
+    this.load.spritesheet("rabbit-jump", "/assets/pixel/animals/rabbit-jump.png", {
+      frameWidth: RABBIT_FRAME_WIDTH,
+      frameHeight: RABBIT_FRAME_HEIGHT,
+    });
+    this.load.spritesheet("rabbit-sick", "/assets/pixel/animals/rabbit-sick.png", {
+      frameWidth: RABBIT_FRAME_WIDTH,
+      frameHeight: RABBIT_FRAME_HEIGHT,
+    });
   }
 
   create(): void {
@@ -56,6 +87,10 @@ export class GameScene extends Phaser.Scene {
     this.boundary = this.add.graphics().setDepth(3);
     this.cursors = this.input.keyboard?.createCursorKeys();
     this.wasd = this.input.keyboard?.addKeys("W,A,S,D") as Record<string, Phaser.Input.Keyboard.Key> | undefined;
+    window.addEventListener(RABBIT_EAT_ATTEMPT_EVENT, this.onLocalEatAttempt);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener(RABBIT_EAT_ATTEMPT_EVENT, this.onLocalEatAttempt);
+    });
   }
 
   update(time: number): void {
@@ -66,7 +101,8 @@ export class GameScene extends Phaser.Scene {
     const length = Math.hypot(input.x, input.y);
     const moveX = length > 1 ? input.x / length : input.x;
     const moveY = length > 1 ? input.y / length : input.y;
-    tickMovementNetcode(time, moveX, moveY);
+    const eating = Boolean(this.players.get(state.selfId)?.rabbitEatTween);
+    tickMovementNetcode(time, eating ? 0 : moveX, eating ? 0 : moveY);
 
     this.syncPlayers(state.snapshot.players, state.selfId);
     this.syncPlants(state.snapshot.plants);
@@ -149,6 +185,7 @@ export class GameScene extends Phaser.Scene {
     const ids = new Set(players.map((player) => player.id));
     this.players.forEach((visual, id) => {
       if (!ids.has(id)) {
+        this.stopRabbitAction(visual, false);
         visual.container.destroy(true);
         this.players.delete(id);
       }
@@ -162,6 +199,8 @@ export class GameScene extends Phaser.Scene {
         const body = this.add.circle(0, 0, 29, species.color, 1).setStrokeStyle(player.id === selfId ? 6 : 3, player.id === selfId ? 0xfff07a : 0x173d2c);
         const emoji = this.add.image(0, -2, "species-atlas");
         this.setSpeciesSprite(emoji, player.species, 54);
+        const rabbitSprite = this.add.sprite(0, -18, "rabbit-jump", rabbitIdleFrame(player.facingX, player.facingY)).setScale(0.27).setVisible(false);
+        const rabbitEffectRoot = this.add.container(0, 0, [rabbitSprite]);
         const label = this.add.text(0, 42, player.name, {
           fontFamily: "Arial, sans-serif",
           fontStyle: "bold",
@@ -172,20 +211,29 @@ export class GameScene extends Phaser.Scene {
         }).setOrigin(0.5);
         const status = this.add.text(0, -48, "", { fontSize: "20px", fontStyle: "bold", color: "#fff" }).setOrigin(0.5);
         const direction = this.add.triangle(0, 34, 0, -8, -6, 7, 6, 7, 0xffed82, 0.95).setStrokeStyle(2, 0x173d2c);
-        const container = this.add.container(renderPosition.x, renderPosition.y, [direction, body, emoji, label, status]).setDepth(player.id === selfId ? 20 : 10);
-        visual = { container, body, emoji, label, status, direction, targetX: renderPosition.x, targetY: renderPosition.y };
+        const container = this.add.container(renderPosition.x, renderPosition.y, [direction, body, emoji, rabbitEffectRoot, label, status]).setDepth(player.id === selfId ? 20 : 10);
+        visual = {
+          container, body, emoji, rabbitSprite, rabbitEffectRoot, label, status, direction,
+          targetX: renderPosition.x, targetY: renderPosition.y,
+          speciesId: player.species, rabbitAction: null, rabbitEatEffectStartedAt: -Infinity,
+        };
         this.players.set(player.id, visual);
         if (player.id === selfId) this.cameras.main.startFollow(container, true, 0.3, 0.3);
       }
       visual.targetX = renderPosition.x;
       visual.targetY = renderPosition.y;
       visual.body.setFillStyle(species.color);
-      this.setSpeciesSprite(visual.emoji, player.species, 54);
+      this.updatePlayerSpeciesVisual(visual, player.species, renderPosition.facingX, renderPosition.facingY);
       const facingAngle = Math.atan2(renderPosition.facingY, renderPosition.facingX);
       visual.direction.setPosition(Math.cos(facingAngle) * 36, Math.sin(facingAngle) * 36).setRotation(facingAngle + Math.PI / 2);
       visual.container.setAlpha(player.status === "ghost" || player.status === "extinct" ? 0.45 : player.stealth ? 0.25 : 1);
       visual.container.setScale(player.shielded ? 0.82 : 1);
       visual.status.setText(player.wrongUntil > Date.now() ? "😵 배탈" : player.shielded ? "🪨 방어" : player.escapeUntil > Date.now() ? "💨 탈출" : player.status === "ghost" ? "👻" : player.status === "extinct" ? "관찰 중" : "");
+      if (player.species === "rabbit" && player.wrongUntil > Date.now()) {
+        if (visual.rabbitAction !== "sick") this.playRabbitSick(visual, renderPosition.facingX, renderPosition.facingY, player.wrongUntil - Date.now());
+      } else if (visual.rabbitAction === "sick") {
+        this.stopRabbitAction(visual);
+      }
     });
   }
 
@@ -296,10 +344,22 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: ring, scale: 2.1, alpha: 0, duration: 420, ease: "Cubic.easeOut", onComplete: () => ring.destroy() });
 
     if (kind === "eat" && actor) {
-      this.tweens.add({ targets: actor.emoji, scale: 1.45, duration: 90, yoyo: true, ease: "Back.easeOut" });
+      if (actor.speciesId === "rabbit") {
+        const locallyStarted = useGameStore.getState().selfId === actorId && this.time.now - actor.rabbitEatEffectStartedAt < 900;
+        if (!locallyStarted) {
+          const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
+          this.playRabbitEatEffect(actor, player?.facingX ?? 0, player?.facingY ?? 1);
+        }
+      }
+      else this.tweens.add({ targets: actor.emoji, scale: 1.45, duration: 90, yoyo: true, ease: "Back.easeOut" });
       this.floatEffect(target.x, target.y - 30, "냠!", "#fff099");
     } else if (kind === "wrong" && actor) {
-      this.tweens.add({ targets: actor.emoji, angle: { from: -16, to: 16 }, duration: 70, repeat: 4, yoyo: true, onComplete: () => actor.emoji.setAngle(0) });
+      if (actor.speciesId === "rabbit") {
+        const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
+        if (actor.rabbitAction !== "sick") this.playRabbitSick(actor, player?.facingX ?? 0, player?.facingY ?? 1, Math.max(500, (player?.wrongUntil ?? Date.now() + 2000) - Date.now()));
+      } else {
+        this.tweens.add({ targets: actor.emoji, angle: { from: -16, to: 16 }, duration: 70, repeat: 4, yoyo: true, onComplete: () => actor.emoji.setAngle(0) });
+      }
       this.floatEffect(target.x, target.y - 30, "우욱…", "#e5b7ff");
     } else if (kind === "blocked") {
       this.floatEffect(target.x, target.y - 30, "튕!", "#bdeaff");
@@ -312,6 +372,91 @@ export class GameScene extends Phaser.Scene {
     if (useGameStore.getState().selfId === actorId && (kind === "eat" || kind === "wrong" || kind === "blocked")) {
       navigator.vibrate?.(kind === "wrong" ? [45, 30, 70] : kind === "blocked" ? 55 : 30);
     }
+  }
+
+  private updatePlayerSpeciesVisual(visual: PlayerVisual, speciesId: string, facingX: number, facingY: number): void {
+    if (visual.speciesId !== speciesId && (visual.rabbitAction || visual.rabbitEatTween)) this.stopRabbitAction(visual, false);
+    visual.speciesId = speciesId;
+    const rabbit = speciesId === "rabbit";
+    visual.emoji.setVisible(!rabbit);
+    visual.rabbitSprite.setVisible(rabbit);
+    if (rabbit) {
+      if (!visual.rabbitAction && !visual.rabbitEatTween) visual.rabbitSprite.setTexture("rabbit-jump", rabbitIdleFrame(facingX, facingY));
+    } else {
+      this.setSpeciesSprite(visual.emoji, speciesId, 54);
+    }
+  }
+
+  private playRabbitEatEffect(visual: PlayerVisual, facingX: number, facingY: number): void {
+    if (visual.rabbitAction === "sick") return;
+    visual.rabbitEatTween?.stop();
+    visual.rabbitEffectRoot.setPosition(0, 0).setAngle(0);
+    visual.rabbitEatEffectStartedAt = this.time.now;
+    const forwardX = facingX * 5;
+    const forwardY = facingY * 5;
+    const shakeX = -facingY * 2;
+    const shakeY = facingX * 2;
+    visual.rabbitEatTween = this.tweens.add({
+      targets: visual.rabbitEffectRoot,
+      x: forwardX,
+      y: forwardY,
+      duration: 70,
+      ease: "Cubic.easeOut",
+      onComplete: () => {
+        visual.rabbitEatTween = this.tweens.add({
+          targets: visual.rabbitEffectRoot,
+          x: { from: forwardX - shakeX, to: forwardX + shakeX },
+          y: { from: forwardY - shakeY, to: forwardY + shakeY },
+          angle: { from: -2, to: 2 },
+          duration: 40,
+          yoyo: true,
+          repeat: 1,
+          ease: "Sine.easeInOut",
+          onComplete: () => {
+            visual.rabbitEatTween = this.tweens.add({
+              targets: visual.rabbitEffectRoot,
+              x: 0,
+              y: 0,
+              angle: 0,
+              duration: 70,
+              ease: "Cubic.easeIn",
+              onComplete: () => {
+                visual.rabbitEffectRoot.setPosition(0, 0).setAngle(0);
+                visual.rabbitEatTween = undefined;
+              },
+            });
+          },
+        });
+      },
+    });
+  }
+
+  private playRabbitSick(visual: PlayerVisual, facingX: number, facingY: number, duration: number): void {
+    this.stopRabbitAction(visual, false);
+    visual.rabbitAction = "sick";
+    visual.rabbitSprite.setTexture("rabbit-sick", rabbitSickFrame(facingX, facingY));
+    this.tweens.add({
+      targets: visual.rabbitSprite,
+      x: { from: -3, to: 3 },
+      angle: { from: -3, to: 3 },
+      duration: 65,
+      yoyo: true,
+      repeat: Math.max(0, Math.ceil(duration / 130) - 1),
+    });
+    visual.rabbitActionTimer = this.time.delayedCall(duration, () => this.stopRabbitAction(visual));
+  }
+
+  private stopRabbitAction(visual: PlayerVisual, restoreIdle = true): void {
+    visual.rabbitActionTimer?.remove(false);
+    visual.rabbitActionTimer = undefined;
+    visual.rabbitEatTween?.stop();
+    visual.rabbitEatTween = undefined;
+    visual.rabbitEffectRoot.setPosition(0, 0).setAngle(0);
+    visual.rabbitSprite.stop();
+    this.tweens.killTweensOf(visual.rabbitSprite);
+    visual.rabbitSprite.setPosition(0, -18).setAngle(0);
+    visual.rabbitAction = null;
+    if (restoreIdle && visual.speciesId === "rabbit") visual.rabbitSprite.setTexture("rabbit-jump", 0);
   }
 
   private floatEffect(x: number, y: number, copy: string, color: string): void {
