@@ -2,7 +2,6 @@ import { Client, type Room } from "@colyseus/sdk";
 import { EAT_RANGE, isWithinEatReach, type ActionEffect, type ExperimentComparison, type GameNotice, type TeacherCommand } from "@feed-chain/shared";
 import { EMPTY_SNAPSHOT, type AnimalSnapshot, type GameSnapshot, type IndividualRelationSnapshot, type PlantSnapshot, type PlayerSnapshot, type RelationSnapshot } from "../types";
 import { useGameStore } from "../store/gameStore";
-import { RABBIT_EAT_ATTEMPT_EVENT } from "../game/rabbitAnimations";
 import { configureMovementNetcode, disposeMovementNetcode, movementRenderPose } from "./movementNetcode";
 
 const endpoint = import.meta.env.VITE_SERVER_URL ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
@@ -175,7 +174,6 @@ export function eatNearest(): void {
   const { room, snapshot, selfId } = useGameStore.getState();
   const self = snapshot.players.find((player) => player.id === selfId);
   if (!room || !self) return;
-  window.dispatchEvent(new Event(RABBIT_EAT_ATTEMPT_EVENT));
   const pose = movementRenderPose(selfId) ?? self;
   const candidates = [
     ...snapshot.players.filter((player) => player.id !== selfId && player.status === "active"),

@@ -18,11 +18,18 @@ import {
   type SpeciesId,
 } from "@feed-chain/shared";
 import {
-  RABBIT_FRAME_HEIGHT,
-  RABBIT_FRAME_WIDTH,
-  rabbitIdleFrame,
-  rabbitSickFrame,
-} from "./rabbitAnimations";
+  SPECIES_FRAME_HEIGHT,
+  SPECIES_FRAME_WIDTH,
+  SPECIES_SPRITE_SCALE,
+  SPRITE_SPECIES,
+  isSpriteSpecies,
+  movementFrame,
+  movementTextureKey,
+  sickFrame,
+  sickTextureKey,
+  speciesSpriteY,
+  speciesSpriteConfig,
+} from "./speciesAnimations";
 
 interface TestTarget {
   id: string;
@@ -59,8 +66,7 @@ export class GameTestScene extends Phaser.Scene {
   private speciesId: PlayableSpeciesId;
   private player?: Phaser.GameObjects.Container;
   private atlasSprite?: Phaser.GameObjects.Image;
-  private rabbitSprite?: Phaser.GameObjects.Sprite;
-  private rabbitEffectRoot?: Phaser.GameObjects.Container;
+  private speciesSprite?: Phaser.GameObjects.Sprite;
   private playerBody?: Phaser.GameObjects.Arc;
   private playerRing?: Phaser.GameObjects.Arc;
   private roleLabel?: Phaser.GameObjects.Text;
@@ -82,9 +88,8 @@ export class GameTestScene extends Phaser.Scene {
   private hunger = 100;
   private score = 0;
   private discoveredFoods = new Set<SpeciesId>();
-  private rabbitAction: "sick" | null = null;
-  private rabbitActionTimer?: Phaser.Time.TimerEvent;
-  private rabbitEatTween?: Phaser.Tweens.Tween;
+  private speciesAction: "sick" | null = null;
+  private speciesActionTimer?: Phaser.Time.TimerEvent;
 
   constructor(options: GameTestSceneOptions) {
     super("game-test");
@@ -94,13 +99,16 @@ export class GameTestScene extends Phaser.Scene {
 
   preload(): void {
     this.load.image("test-species-atlas", "/assets/pixel/species-atlas.png");
-    this.load.spritesheet("test-rabbit-jump", "/assets/pixel/animals/rabbit-jump.png", {
-      frameWidth: RABBIT_FRAME_WIDTH,
-      frameHeight: RABBIT_FRAME_HEIGHT,
-    });
-    this.load.spritesheet("rabbit-sick", "/assets/pixel/animals/rabbit-sick.png", {
-      frameWidth: RABBIT_FRAME_WIDTH,
-      frameHeight: RABBIT_FRAME_HEIGHT,
+    SPRITE_SPECIES.forEach((speciesId) => {
+      const config = speciesSpriteConfig(speciesId);
+      this.load.spritesheet(movementTextureKey(speciesId, "test-"), `/assets/pixel/animals/${config.movementFile}`, {
+        frameWidth: SPECIES_FRAME_WIDTH,
+        frameHeight: SPECIES_FRAME_HEIGHT,
+      });
+      this.load.spritesheet(sickTextureKey(speciesId, "test-"), `/assets/pixel/animals/${config.sickFile}`, {
+        frameWidth: SPECIES_FRAME_WIDTH,
+        frameHeight: SPECIES_FRAME_HEIGHT,
+      });
     });
   }
 
@@ -137,7 +145,7 @@ export class GameTestScene extends Phaser.Scene {
     const species = SPECIES[this.speciesId];
     const skill = species.skill;
     const skillActive = time < this.skillActiveUntil;
-    const movementLocked = Boolean(this.rabbitEatTween) || time < this.wrongUntil || skillActive && Boolean(skill && "movementLocked" in skill && skill.movementLocked);
+    const movementLocked = time < this.wrongUntil || skillActive && Boolean(skill && "movementLocked" in skill && skill.movementLocked);
     const moving = !movementLocked && Boolean(inputX || inputY);
     const speedMultiplier = skillActive && skill?.kind === "dash" ? skill.speedMultiplier ?? 1.3 : 1;
 
@@ -166,7 +174,7 @@ export class GameTestScene extends Phaser.Scene {
     this.hunger = 100;
     this.score = 0;
     this.discoveredFoods.clear();
-    this.stopRabbitAction();
+    this.stopSpeciesAction();
     this.updateRoleVisual();
     this.burst(0xffe57a, `${SPECIES[speciesId].name} 역할`);
     this.emitStatus(this.time.now, true);
@@ -185,7 +193,7 @@ export class GameTestScene extends Phaser.Scene {
     if (skill.kind === "leap") {
       const distance = skill.dashDistance ?? 105;
       this.moveWithCollisions(this.facing.x * distance, this.facing.y * distance);
-      this.tweens.add({ targets: [this.atlasSprite, this.rabbitSprite], y: -58, scaleY: 1.08, duration: skill.durationMs / 2, yoyo: true, ease: "Sine.easeOut" });
+      this.tweens.add({ targets: [this.atlasSprite, this.speciesSprite], y: -58, scaleY: 1.08, duration: skill.durationMs / 2, yoyo: true, ease: "Sine.easeOut" });
     }
     this.burst(skill.kind === "shield" ? 0x88dcff : skill.kind === "stealth" ? 0xb98cff : 0xffdf68, skill.name);
     this.emitStatus(this.time.now, true);
@@ -200,7 +208,6 @@ export class GameTestScene extends Phaser.Scene {
 
   eatNearest(): void {
     if (!this.player || this.time.now < this.eatReadyAt || this.time.now < this.wrongUntil) return;
-    this.playRabbitEatEffect();
     const target = this.nearestTarget();
     if (!target) {
       this.burst(0xff9e72, "먹이가 너무 멀어요");
@@ -222,7 +229,7 @@ export class GameTestScene extends Phaser.Scene {
     } else {
       this.wrongUntil = this.time.now + 2000;
       this.hunger = Math.max(0, this.hunger - 12);
-      this.playRabbitSick(2000);
+      this.playSpeciesSick(2000);
       this.burst(0xc783ff, "우욱… 먹이가 아니에요");
     }
     this.emitStatus(this.time.now, true);
@@ -233,8 +240,7 @@ export class GameTestScene extends Phaser.Scene {
     this.playerRing = this.add.circle(0, 0, 36, 0xffffff, 0.05).setStrokeStyle(4, 0xffed80, 1);
     this.playerBody = this.add.circle(0, -3, 31, SPECIES[this.speciesId].color, 0.98).setStrokeStyle(4, 0x123629);
     this.atlasSprite = this.add.image(0, -7, "test-species-atlas");
-    this.rabbitSprite = this.add.sprite(0, -18, "test-rabbit-jump", 0).setVisible(false);
-    this.rabbitEffectRoot = this.add.container(0, 0, [this.rabbitSprite]);
+    this.speciesSprite = this.add.sprite(0, -18, movementTextureKey("rabbit", "test-"), 0).setVisible(false);
     this.roleLabel = this.add.text(0, 45, "", {
       fontFamily: "Jua, sans-serif",
       fontSize: "17px",
@@ -249,30 +255,38 @@ export class GameTestScene extends Phaser.Scene {
       stroke: "#17382d",
       strokeThickness: 5,
     }).setOrigin(0.5);
-    this.player = this.add.container(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, [shadow, this.playerRing, this.playerBody, this.atlasSprite, this.rabbitEffectRoot, this.roleLabel, this.stateLabel]).setDepth(30);
+    this.player = this.add.container(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, [shadow, this.playerRing, this.playerBody, this.atlasSprite, this.speciesSprite, this.roleLabel, this.stateLabel]).setDepth(30);
     this.updateRoleVisual();
   }
 
   private updateRoleVisual(): void {
-    if (!this.atlasSprite || !this.rabbitSprite || !this.playerBody || !this.roleLabel) return;
+    if (!this.atlasSprite || !this.speciesSprite || !this.playerBody || !this.roleLabel) return;
     const species = SPECIES[this.speciesId];
     this.playerBody.setFillStyle(species.color);
     this.roleLabel.setText(`${species.name} · ${species.skill?.name ?? "스킬 없음"}`);
-    const rabbit = this.speciesId === "rabbit";
-    this.rabbitSprite.setVisible(rabbit).setScale(0.27).setPosition(0, -22);
-    this.atlasSprite.setVisible(!rabbit).setPosition(0, -7);
-    if (rabbit && !this.rabbitAction) {
-      this.rabbitSprite.setTexture("test-rabbit-jump", rabbitIdleFrame(this.facing.x, this.facing.y));
+    const spriteSpeciesId = isSpriteSpecies(this.speciesId) ? this.speciesId : null;
+    const spriteY = spriteSpeciesId ? speciesSpriteY(spriteSpeciesId, -22) : -22;
+    this.speciesSprite.setVisible(Boolean(spriteSpeciesId)).setScale(SPECIES_SPRITE_SCALE).setPosition(0, spriteY);
+    this.atlasSprite.setVisible(!spriteSpeciesId).setPosition(0, -7);
+    if (spriteSpeciesId && !this.speciesAction) {
+      this.speciesSprite.setTexture(
+        movementTextureKey(spriteSpeciesId, "test-"),
+        movementFrame(this.facing.x, this.facing.y),
+      );
     }
-    if (!rabbit) this.setAtlasSpecies(this.atlasSprite, this.speciesId, 68);
+    if (!spriteSpeciesId) this.setAtlasSpecies(this.atlasSprite, this.speciesId, 68);
   }
 
   private updateVisual(time: number, moving: boolean, skillActive: boolean): void {
-    if (!this.player || !this.playerRing || !this.playerBody || !this.atlasSprite || !this.rabbitSprite || !this.stateLabel) return;
+    if (!this.player || !this.playerRing || !this.playerBody || !this.atlasSprite || !this.speciesSprite || !this.stateLabel) return;
     const skill = SPECIES[this.speciesId].skill;
-    const directionRow = Math.floor(rabbitIdleFrame(this.facing.x, this.facing.y) / 4);
     const phase = moving ? Math.floor(this.hopPhase) % 4 : 0;
-    if (!this.rabbitAction && !this.rabbitEatTween) this.rabbitSprite.setTexture("test-rabbit-jump", directionRow * 4 + phase);
+    if (isSpriteSpecies(this.speciesId) && !this.speciesAction) {
+      this.speciesSprite.setTexture(
+        movementTextureKey(this.speciesId, "test-"),
+        movementFrame(this.facing.x, this.facing.y, phase),
+      );
+    }
     this.atlasSprite.setY(-7 + (moving ? Math.sin(this.hopPhase * Math.PI / 2) * 3 : 0));
     this.playerRing.setStrokeStyle(skillActive ? 7 : 4, skill?.kind === "shield" && skillActive ? 0x8edcff : 0xffed80, skillActive ? 1 : 0.85);
     const stealth = skillActive && skill?.kind === "stealth";
@@ -282,83 +296,42 @@ export class GameTestScene extends Phaser.Scene {
     this.stateLabel.setText(skillActive ? `${skill?.name} 발동!` : remaining > 0 ? `${Math.ceil(remaining / 1000)}초` : "");
   }
 
-  private playRabbitEatEffect(): void {
-    if (this.speciesId !== "rabbit" || !this.rabbitEffectRoot || this.rabbitAction === "sick") return;
-    this.rabbitEatTween?.stop();
-    this.rabbitEffectRoot.setPosition(0, 0).setAngle(0);
-    const forwardX = this.facing.x * 5;
-    const forwardY = this.facing.y * 5;
-    const shakeX = -this.facing.y * 2;
-    const shakeY = this.facing.x * 2;
-    this.rabbitEatTween = this.tweens.add({
-      targets: this.rabbitEffectRoot,
-      x: forwardX,
-      y: forwardY,
-      duration: 70,
-      ease: "Cubic.easeOut",
-      onComplete: () => {
-        if (!this.rabbitEffectRoot) return;
-        this.rabbitEatTween = this.tweens.add({
-          targets: this.rabbitEffectRoot,
-          x: { from: forwardX - shakeX, to: forwardX + shakeX },
-          y: { from: forwardY - shakeY, to: forwardY + shakeY },
-          angle: { from: -2, to: 2 },
-          duration: 40,
-          yoyo: true,
-          repeat: 1,
-          ease: "Sine.easeInOut",
-          onComplete: () => {
-            if (!this.rabbitEffectRoot) return;
-            this.rabbitEatTween = this.tweens.add({
-              targets: this.rabbitEffectRoot,
-              x: 0,
-              y: 0,
-              angle: 0,
-              duration: 70,
-              ease: "Cubic.easeIn",
-              onComplete: () => {
-                this.rabbitEffectRoot?.setPosition(0, 0).setAngle(0);
-                this.rabbitEatTween = undefined;
-              },
-            });
-          },
-        });
-      },
-    });
-  }
-
-  private playRabbitSick(duration: number): void {
-    if (this.speciesId !== "rabbit" || !this.rabbitSprite) return;
-    this.stopRabbitAction(false);
-    this.rabbitAction = "sick";
-    this.rabbitSprite.setTexture("rabbit-sick", rabbitSickFrame(this.facing.x, this.facing.y));
+  private playSpeciesSick(duration: number): void {
+    if (!isSpriteSpecies(this.speciesId) || !this.speciesSprite) return;
+    this.stopSpeciesAction(false);
+    this.speciesAction = "sick";
+    this.speciesSprite.setTexture(
+      sickTextureKey(this.speciesId, "test-"),
+      sickFrame(this.facing.x, this.facing.y),
+    );
     this.tweens.add({
-      targets: this.rabbitSprite,
+      targets: this.speciesSprite,
       x: { from: -3, to: 3 },
       angle: { from: -3, to: 3 },
       duration: 65,
       yoyo: true,
       repeat: Math.max(0, Math.ceil(duration / 130) - 1),
     });
-    this.rabbitActionTimer = this.time.delayedCall(duration, () => this.stopRabbitAction());
+    this.speciesActionTimer = this.time.delayedCall(duration, () => this.stopSpeciesAction());
   }
 
-  private stopRabbitAction(restoreIdle = true): void {
-    this.rabbitActionTimer?.remove(false);
-    this.rabbitActionTimer = undefined;
-    this.rabbitEatTween?.stop();
-    this.rabbitEatTween = undefined;
-    this.rabbitEffectRoot?.setPosition(0, 0).setAngle(0);
-    if (!this.rabbitSprite) {
-      this.rabbitAction = null;
+  private stopSpeciesAction(restoreIdle = true): void {
+    this.speciesActionTimer?.remove(false);
+    this.speciesActionTimer = undefined;
+    if (!this.speciesSprite) {
+      this.speciesAction = null;
       return;
     }
-    this.rabbitSprite.stop();
-    this.tweens.killTweensOf(this.rabbitSprite);
-    this.rabbitSprite.setPosition(0, -22).setAngle(0);
-    this.rabbitAction = null;
-    if (restoreIdle && this.speciesId === "rabbit") {
-      this.rabbitSprite.setTexture("test-rabbit-jump", rabbitIdleFrame(this.facing.x, this.facing.y));
+    this.speciesSprite.stop();
+    this.tweens.killTweensOf(this.speciesSprite);
+    const y = isSpriteSpecies(this.speciesId) ? speciesSpriteY(this.speciesId, -22) : -22;
+    this.speciesSprite.setPosition(0, y).setAngle(0);
+    this.speciesAction = null;
+    if (restoreIdle && isSpriteSpecies(this.speciesId)) {
+      this.speciesSprite.setTexture(
+        movementTextureKey(this.speciesId, "test-"),
+        movementFrame(this.facing.x, this.facing.y),
+      );
     }
   }
 
