@@ -1,21 +1,50 @@
 export const SPECIES_FRAME_WIDTH = 304;
 export const SPECIES_FRAME_HEIGHT = 352;
 export const SPECIES_SPRITE_SCALE = 0.27;
+export const SNATCH_DURATION_MS = 320;
+export const SNATCH_FRAME_RATE = 16;
 
-export const SPRITE_SPECIES = ["rabbit", "squirrel", "snake", "weasel"] as const;
+export const SPRITE_SPECIES = [
+  "grasshopper", "caterpillar", "frog", "rabbit", "squirrel", "snake", "weasel", "bulbul", "hawk",
+] as const;
+export const SPRITE_DIRECTIONS = ["down", "left", "right", "up"] as const;
 
 export type SpriteSpeciesId = (typeof SPRITE_SPECIES)[number];
-export type SpriteDirection = "down" | "left" | "right" | "up";
+export type SpriteDirection = (typeof SPRITE_DIRECTIONS)[number];
 
 interface SpeciesSpriteConfig {
   movementFile: string;
   movementTexture: string;
-  sickFile: string;
-  sickTexture: string;
+  sickFile?: string;
+  sickTexture?: string;
+  snatchFile?: string;
+  snatchTexture?: string;
   yOffset: number;
+  snatchDrop?: number;
 }
 
 const SPECIES_SPRITES: Record<SpriteSpeciesId, SpeciesSpriteConfig> = {
+  grasshopper: {
+    movementFile: "grasshopper-walk.png",
+    movementTexture: "grasshopper-walk",
+    sickFile: "grasshopper-sick.png",
+    sickTexture: "grasshopper-sick",
+    yOffset: 0,
+  },
+  caterpillar: {
+    movementFile: "caterpillar-walk.png",
+    movementTexture: "caterpillar-walk",
+    sickFile: "caterpillar-sick.png",
+    sickTexture: "caterpillar-sick",
+    yOffset: 0,
+  },
+  frog: {
+    movementFile: "frog-walk.png",
+    movementTexture: "frog-walk",
+    sickFile: "frog-sick.png",
+    sickTexture: "frog-sick",
+    yOffset: 0,
+  },
   rabbit: {
     movementFile: "rabbit-jump.png",
     movementTexture: "rabbit-jump",
@@ -44,6 +73,26 @@ const SPECIES_SPRITES: Record<SpriteSpeciesId, SpeciesSpriteConfig> = {
     sickTexture: "weasel-sick",
     yOffset: 9,
   },
+  bulbul: {
+    movementFile: "bulbul-fly.png",
+    movementTexture: "bulbul-fly",
+    sickFile: "bulbul-sick.png",
+    sickTexture: "bulbul-sick",
+    snatchFile: "bulbul-snatch.png",
+    snatchTexture: "bulbul-snatch",
+    yOffset: -14,
+    snatchDrop: 24,
+  },
+  hawk: {
+    movementFile: "hawk-fly.png",
+    movementTexture: "hawk-fly",
+    sickFile: "hawk-sick.png",
+    sickTexture: "hawk-sick",
+    snatchFile: "hawk-snatch.png",
+    snatchTexture: "hawk-snatch",
+    yOffset: -14,
+    snatchDrop: 24,
+  },
 };
 
 const DIRECTION_ROWS: Record<SpriteDirection, number> = {
@@ -66,7 +115,27 @@ export function movementTextureKey(speciesId: SpriteSpeciesId, prefix = ""): str
 }
 
 export function sickTextureKey(speciesId: SpriteSpeciesId, prefix = ""): string {
-  return `${prefix}${SPECIES_SPRITES[speciesId].sickTexture}`;
+  return `${prefix}${SPECIES_SPRITES[speciesId].sickTexture ?? `${speciesId}-sick`}`;
+}
+
+export function snatchTextureKey(speciesId: SpriteSpeciesId, prefix = ""): string {
+  return `${prefix}${SPECIES_SPRITES[speciesId].snatchTexture ?? `${speciesId}-snatch`}`;
+}
+
+export function hasSickSprite(speciesId: SpriteSpeciesId): boolean {
+  return Boolean(SPECIES_SPRITES[speciesId].sickFile);
+}
+
+export function hasSnatchSprite(speciesId: SpriteSpeciesId): boolean {
+  return Boolean(SPECIES_SPRITES[speciesId].snatchFile);
+}
+
+export function isFlyingSpriteSpecies(speciesId: string): speciesId is "bulbul" | "hawk" {
+  return speciesId === "bulbul" || speciesId === "hawk";
+}
+
+export function speciesSnatchDrop(speciesId: SpriteSpeciesId): number {
+  return SPECIES_SPRITES[speciesId].snatchDrop ?? 0;
 }
 
 export function speciesSpriteY(speciesId: SpriteSpeciesId, baseY: number): number {
@@ -88,4 +157,8 @@ export function movementFrame(facingX: number, facingY: number, phase = 0): numb
 
 export function sickFrame(facingX: number, facingY: number): number {
   return spriteDirectionRow(facingX, facingY);
+}
+
+export function snatchAnimationKey(speciesId: SpriteSpeciesId, direction: SpriteDirection, prefix = ""): string {
+  return `${prefix}${speciesId}-snatch-${direction}`;
 }

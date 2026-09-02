@@ -16,12 +16,23 @@ import {
   SPECIES_FRAME_HEIGHT,
   SPECIES_FRAME_WIDTH,
   SPECIES_SPRITE_SCALE,
+  SNATCH_DURATION_MS,
+  SNATCH_FRAME_RATE,
+  SPRITE_DIRECTIONS,
   SPRITE_SPECIES,
+  hasSickSprite,
+  hasSnatchSprite,
+  isFlyingSpriteSpecies,
   isSpriteSpecies,
   movementFrame,
   movementTextureKey,
   sickFrame,
   sickTextureKey,
+  snatchAnimationKey,
+  snatchTextureKey,
+  speciesSnatchDrop,
+  spriteDirection,
+  spriteDirectionRow,
   speciesSpriteY,
   speciesSpriteConfig,
 } from "./speciesAnimations";
@@ -37,7 +48,7 @@ interface PlayerVisual {
   targetX: number;
   targetY: number;
   speciesId: string;
-  speciesAction: "sick" | null;
+  speciesAction: "sick" | "snatch" | null;
   speciesActionTimer?: Phaser.Time.TimerEvent;
 }
 
@@ -67,14 +78,23 @@ export class GameScene extends Phaser.Scene {
         frameWidth: SPECIES_FRAME_WIDTH,
         frameHeight: SPECIES_FRAME_HEIGHT,
       });
-      this.load.spritesheet(sickTextureKey(speciesId), `/assets/pixel/animals/${config.sickFile}`, {
-        frameWidth: SPECIES_FRAME_WIDTH,
-        frameHeight: SPECIES_FRAME_HEIGHT,
-      });
+      if (config.sickFile) {
+        this.load.spritesheet(sickTextureKey(speciesId), `/assets/pixel/animals/${config.sickFile}`, {
+          frameWidth: SPECIES_FRAME_WIDTH,
+          frameHeight: SPECIES_FRAME_HEIGHT,
+        });
+      }
+      if (config.snatchFile) {
+        this.load.spritesheet(snatchTextureKey(speciesId), `/assets/pixel/animals/${config.snatchFile}`, {
+          frameWidth: SPECIES_FRAME_WIDTH,
+          frameHeight: SPECIES_FRAME_HEIGHT,
+        });
+      }
     });
   }
 
   create(): void {
+    this.createSpeciesAnimations();
     this.cameras.main.setBackgroundColor("#83c867");
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
@@ -223,7 +243,7 @@ export class GameScene extends Phaser.Scene {
       visual.container.setAlpha(player.status === "ghost" || player.status === "extinct" ? 0.45 : player.stealth ? 0.25 : 1);
       visual.container.setScale(player.shielded ? 0.82 : 1);
       visual.status.setText(player.wrongUntil > Date.now() ? "😵 배탈" : player.shielded ? "🪨 방어" : player.escapeUntil > Date.now() ? "💨 탈출" : player.status === "ghost" ? "👻" : player.status === "extinct" ? "관찰 중" : "");
-      if (isSpriteSpecies(player.species) && player.wrongUntil > Date.now()) {
+      if (isSpriteSpecies(player.species) && hasSickSprite(player.species) && player.wrongUntil > Date.now()) {
         if (visual.speciesAction !== "sick") this.playSpeciesSick(visual, player.species, renderPosition.facingX, renderPosition.facingY, player.wrongUntil - Date.now());
       } else if (visual.speciesAction === "sick") {
         this.stopSpeciesAction(visual);
@@ -338,9 +358,16 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: ring, scale: 2.1, alpha: 0, duration: 420, ease: "Cubic.easeOut", onComplete: () => ring.destroy() });
 
     if (kind === "eat" && actor) {
+      if (isSpriteSpecies(actor.speciesId) && hasSnatchSprite(actor.speciesId)) {
+        const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
+        this.playSpeciesSnatch(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1);
+      }
       this.floatEffect(target.x, target.y - 30, "냠!", "#fff099");
     } else if (kind === "wrong" && actor) {
-      if (isSpriteSpecies(actor.speciesId)) {
+      if (isSpriteSpecies(actor.speciesId) && hasSnatchSprite(actor.speciesId)) {
+        const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
+        this.playSpeciesSnatch(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1);
+      } else if (isSpriteSpecies(actor.speciesId) && hasSickSprite(actor.speciesId)) {
         const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
         if (actor.speciesAction !== "sick") this.playSpeciesSick(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1, Math.max(500, (player?.wrongUntil ?? Date.now() + 2000) - Date.now()));
       } else {
@@ -367,9 +394,11 @@ export class GameScene extends Phaser.Scene {
     visual.emoji.setVisible(!spriteSpecies);
     visual.speciesSprite.setVisible(spriteSpecies);
     if (spriteSpecies) {
-      visual.speciesSprite.setY(speciesSpriteY(speciesId, -18));
       if (!visual.speciesAction) {
-        const phase = moving ? Math.floor(this.time.now / 110) % 4 : 0;
+        const flying = isFlyingSpriteSpecies(speciesId);
+        const phase = moving || flying ? Math.floor(this.time.now / 110) % 4 : 0;
+        const hover = flying ? Math.sin(this.time.now / 170) * 2 : 0;
+        visual.speciesSprite.setPosition(0, speciesSpriteY(speciesId, -18) + hover);
         visual.speciesSprite.setTexture(movementTextureKey(speciesId), movementFrame(facingX, facingY, phase));
       }
     } else {
@@ -378,7 +407,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private playSpeciesSick(visual: PlayerVisual, speciesId: string, facingX: number, facingY: number, duration: number): void {
-    if (!isSpriteSpecies(speciesId)) return;
+    if (!isSpriteSpecies(speciesId) || !hasSickSprite(speciesId)) return;
     this.stopSpeciesAction(visual, false);
     visual.speciesAction = "sick";
     visual.speciesSprite.setTexture(sickTextureKey(speciesId), sickFrame(facingX, facingY));
@@ -391,6 +420,40 @@ export class GameScene extends Phaser.Scene {
       repeat: Math.max(0, Math.ceil(duration / 130) - 1),
     });
     visual.speciesActionTimer = this.time.delayedCall(duration, () => this.stopSpeciesAction(visual));
+  }
+
+  private playSpeciesSnatch(visual: PlayerVisual, speciesId: string, facingX: number, facingY: number): void {
+    if (!isSpriteSpecies(speciesId) || !hasSnatchSprite(speciesId)) return;
+    this.stopSpeciesAction(visual, false);
+    visual.speciesAction = "snatch";
+    const baseY = speciesSpriteY(speciesId, -18);
+    visual.speciesSprite.setPosition(0, baseY).setAngle(0);
+    visual.speciesSprite.play(snatchAnimationKey(speciesId, spriteDirection(facingX, facingY)));
+    this.tweens.add({
+      targets: visual.speciesSprite,
+      y: baseY + speciesSnatchDrop(speciesId),
+      duration: SNATCH_DURATION_MS / 2,
+      yoyo: true,
+      ease: "Sine.easeInOut",
+    });
+    visual.speciesActionTimer = this.time.delayedCall(SNATCH_DURATION_MS, () => this.stopSpeciesAction(visual));
+  }
+
+  private createSpeciesAnimations(): void {
+    SPRITE_SPECIES.forEach((speciesId) => {
+      if (!hasSnatchSprite(speciesId)) return;
+      SPRITE_DIRECTIONS.forEach((direction) => {
+        const key = snatchAnimationKey(speciesId, direction);
+        if (this.anims.exists(key)) return;
+        const start = spriteDirectionRow(direction === "left" ? -1 : direction === "right" ? 1 : 0, direction === "up" ? -1 : direction === "down" ? 1 : 0) * 4;
+        this.anims.create({
+          key,
+          frames: this.anims.generateFrameNumbers(snatchTextureKey(speciesId), { start, end: start + 3 }),
+          frameRate: SNATCH_FRAME_RATE,
+          repeat: 0,
+        });
+      });
+    });
   }
 
   private stopSpeciesAction(visual: PlayerVisual, restoreIdle = true): void {
