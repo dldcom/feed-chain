@@ -48,6 +48,28 @@ export const SPECIES = {
     baseSpeed: 0,
     maxPopulation: 20,
   },
+  acorn: {
+    id: "acorn",
+    name: "도토리",
+    emoji: "🌰",
+    color: 0xb77942,
+    cssColor: "#b77942",
+    level: "producer",
+    playable: false,
+    baseSpeed: 0,
+    maxPopulation: 28,
+  },
+  clover: {
+    id: "clover",
+    name: "토끼풀",
+    emoji: "☘️",
+    color: 0x74c947,
+    cssColor: "#74c947",
+    level: "producer",
+    playable: false,
+    baseSpeed: 0,
+    maxPopulation: 30,
+  },
   grasshopper: {
     id: "grasshopper",
     name: "메뚜기",
@@ -171,7 +193,9 @@ export const SPECIES = {
 } as const satisfies Record<string, SpeciesDefinition>;
 
 export type SpeciesId = keyof typeof SPECIES;
-export type PlayableSpeciesId = Exclude<SpeciesId, "grass" | "berry">;
+type PlayableFlag<K extends SpeciesId> = (typeof SPECIES)[K]["playable"] extends true ? K : never;
+export type PlayableSpeciesId = { [K in SpeciesId]: PlayableFlag<K> }[SpeciesId];
+export type ProducerSpeciesId = Exclude<SpeciesId, PlayableSpeciesId>;
 
 export const PLAYABLE_SPECIES = Object.values(SPECIES).filter(
   (species): species is (typeof SPECIES)[PlayableSpeciesId] => species.playable,

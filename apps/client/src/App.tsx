@@ -13,6 +13,7 @@ const GameScreen = lazy(() => import("./screens/GameScreen").then((module) => ({
 const FoodWebScreen = lazy(() => import("./screens/FoodWebScreen").then((module) => ({ default: module.FoodWebScreen })));
 const ExperimentPlaybackScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.ExperimentPlaybackScreen })));
 const FinalResultsScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.FinalResultsScreen })));
+const ModeResultScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.ModeResultScreen })));
 const GameTestScreen = lazy(() => import("./screens/GameTestScreen").then((module) => ({ default: module.GameTestScreen })));
 
 function CurrentScreen(): JSX.Element {
@@ -25,7 +26,9 @@ function CurrentScreen(): JSX.Element {
   }
   if (snapshot.phase === "role_reveal") return role === "student" ? <RoleRevealScreen /> : <IntermissionScreen icon="🎲" title="역할을 확인하는 중" copy="학생들이 자신의 먹이 관계를 살펴보고 있어요." />;
   if (isActivePlayPhase(snapshot.phase)) return <GameScreen />;
+  if (snapshot.phase === "mode_result") return <ModeResultScreen />;
   if (isWebPhase(snapshot.phase)) return <FoodWebScreen />;
+  if (snapshot.phase === "mode_setup") return <IntermissionScreen icon="🧭" title="게임 모드를 준비하고 있어요" copy={role === "teacher" ? "오른쪽 교사 패널에서 네 가지 활동 중 하나를 선택하세요." : "선생님이 오늘 관찰할 먹이사슬 또는 먹이그물을 고르고 있어요."} />;
   if (snapshot.phase === "experiment_setup") return <IntermissionScreen icon="🧪" title="생태계 변화 실험" copy={role === "teacher" ? "오른쪽에서 사라질 생물을 선택하세요." : "어떤 생물이 사라질지 선생님과 함께 정해 보세요."} />;
   if (snapshot.phase === "experiment_b") return <ExperimentPlaybackScreen />;
   if (snapshot.phase === "final_results") return <FinalResultsScreen />;

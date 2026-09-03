@@ -1,15 +1,17 @@
 import { useEffect, useRef } from "react";
 import Phaser from "phaser";
-import type { PlayableSpeciesId } from "@feed-chain/shared";
+import type { GameModeId, PlayableSpeciesId, SpeciesId } from "@feed-chain/shared";
 import { GameTestScene, type GameTestStatus } from "./GameTestScene";
 
 interface GameTestCanvasProps {
   speciesId: PlayableSpeciesId;
+  modeId: GameModeId;
+  removedSpecies?: SpeciesId;
   onReady: (scene: GameTestScene | null) => void;
   onStatus: (status: GameTestStatus) => void;
 }
 
-export function GameTestCanvas({ speciesId, onReady, onStatus }: GameTestCanvasProps): JSX.Element {
+export function GameTestCanvas({ speciesId, modeId, removedSpecies, onReady, onStatus }: GameTestCanvasProps): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<GameTestScene | null>(null);
   const statusRef = useRef(onStatus);
@@ -19,6 +21,8 @@ export function GameTestCanvas({ speciesId, onReady, onStatus }: GameTestCanvasP
     if (!host.current) return;
     const scene = new GameTestScene({
       initialSpeciesId: speciesId,
+      initialModeId: modeId,
+      initialRemovedSpecies: removedSpecies,
       onReady: (readyScene) => {
         sceneRef.current = readyScene;
         onReady(readyScene);
@@ -45,6 +49,10 @@ export function GameTestCanvas({ speciesId, onReady, onStatus }: GameTestCanvasP
   useEffect(() => {
     sceneRef.current?.setSpecies(speciesId);
   }, [speciesId]);
+
+  useEffect(() => {
+    sceneRef.current?.setMode(modeId, removedSpecies);
+  }, [modeId, removedSpecies]);
 
   return <div ref={host} className="game-test-canvas" aria-label="역할과 스킬을 시험하는 생태계 맵" />;
 }

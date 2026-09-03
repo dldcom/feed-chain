@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CANONICAL_FOOD_RELATIONS,
+  GAME_MODE_CONFIGS,
   PLANT_SPAWN_POINTS,
   ROLE_DISTRIBUTION_23,
   SPAWN_POINTS,
@@ -11,6 +12,7 @@ import {
   canEat,
   isWithinEatReach,
   isWithinEatServerReach,
+  modeConfig,
   scoreForRelation,
   simulateEcosystem,
 } from "@feed-chain/shared";
@@ -31,6 +33,33 @@ describe("먹이 관계 규칙", () => {
   it("새 관계에 반복 관계보다 큰 점수를 준다", () => {
     expect(scoreForRelation(false)).toBe(2);
     expect(scoreForRelation(true)).toBe(0.1);
+  });
+
+  it("네 가지 수업 모드의 핵심 종과 시간을 고정한다", () => {
+    expect(GAME_MODE_CONFIGS.chain_observe.durationMs).toBe(5 * 60 * 1000);
+    expect(GAME_MODE_CONFIGS.chain_observe.activeSpecies).toEqual(["hawk", "frog", "caterpillar", "clover"]);
+    expect(GAME_MODE_CONFIGS.chain_removal.playableSpecies).toEqual(["hawk", "caterpillar"]);
+    expect(GAME_MODE_CONFIGS.chain_removal.npc).toEqual([{ species: "frog", count: 1, breedingEnabled: true, respawnWhenExtinct: true }]);
+    expect(GAME_MODE_CONFIGS.chain_removal.starvationTimeoutMs).toBe(60 * 1000);
+    expect(GAME_MODE_CONFIGS.chain_removal.respawnDelayMs).toBe(3000);
+    expect(GAME_MODE_CONFIGS.chain_removal.starvationRespawnDelayMs).toBe(10000);
+    expect(GAME_MODE_CONFIGS.chain_removal.ghostDurationMs).toBe(10000);
+    expect(GAME_MODE_CONFIGS.web_observe.durationMs).toBe(5 * 60 * 1000);
+    expect(GAME_MODE_CONFIGS.web_observe.activeSpecies).toHaveLength(14);
+    expect(GAME_MODE_CONFIGS.web_removal.durationMs).toBe(3 * 60 * 1000);
+    expect(GAME_MODE_CONFIGS.web_removal.starvationTimeoutMs).toBe(60 * 1000);
+  });
+
+  it("먹이그물 제거 모드는 선택한 종과 그 먹이·포식자 관계를 함께 뺀다", () => {
+    const removed = modeConfig("web_removal", "frog");
+    expect(removed.activeSpecies).not.toContain("frog");
+    expect(removed.relations.some((edge) => edge.prey === "frog" || edge.predator === "frog")).toBe(false);
+    const removedPlant = modeConfig("web_removal", "clover");
+    expect(removedPlant.producerSpecies).not.toContain("clover");
+    expect(removedPlant.plantCounts.clover).toBeUndefined();
+    const removedAnimal = modeConfig("web_removal", "hawk");
+    expect(removedAnimal.playableSpecies).not.toContain("hawk");
+    expect(removedAnimal.relations.some((edge) => edge.predator === "hawk")).toBe(false);
   });
 });
 

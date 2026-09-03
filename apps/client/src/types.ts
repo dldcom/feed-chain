@@ -1,4 +1,4 @@
-import type { ExperimentComparison, GamePhase } from "@feed-chain/shared";
+import type { ExperimentComparison, GameModeId, GamePhase, ModeResult } from "@feed-chain/shared";
 
 export interface PlayerSnapshot {
   id: string;
@@ -27,6 +27,9 @@ export interface PlayerSnapshot {
   timesEaten: number;
   survivalMs: number;
   livesEnded: number;
+  populationCount: number;
+  lastFoodAt: number;
+  respawnAt: number;
 }
 
 export interface PlantSnapshot {
@@ -36,6 +39,7 @@ export interface PlantSnapshot {
   y: number;
   active: boolean;
   respawnAt: number;
+  populationCount: number;
 }
 
 export interface AnimalSnapshot {
@@ -45,12 +49,26 @@ export interface AnimalSnapshot {
   y: number;
   hunger: number;
   meals: number;
+  status: string;
+  populationCount: number;
+  respawnAt: number;
+  ghostUntil: number;
+  lastFoodAt: number;
+  breedingEnabled: boolean;
+  fixed: boolean;
+  extinct: boolean;
 }
 
 export interface RelationSnapshot {
   prey: string;
   predator: string;
   count: number;
+}
+
+export interface PopulationSnapshot {
+  species: string;
+  count: number;
+  peak: number;
 }
 
 export interface IndividualRelationSnapshot {
@@ -68,15 +86,21 @@ export interface GameSnapshot {
   timeRemainingMs: number;
   shrinkStage: number;
   roundNumber: number;
+  modeId: GameModeId | "";
+  modeNumber: number;
+  modeTitle: string;
+  modeElapsedMs: number;
   removedSpecies: string;
   expectedRelations: number;
   players: PlayerSnapshot[];
   plants: PlantSnapshot[];
   animals: AnimalSnapshot[];
+  populations: PopulationSnapshot[];
   observedRelations: RelationSnapshot[];
   blueRelations: RelationSnapshot[];
   individualRelations: IndividualRelationSnapshot[];
   experiment: ExperimentComparison | null;
+  modeResult: ModeResult | null;
 }
 
 export const EMPTY_SNAPSHOT: GameSnapshot = {
@@ -86,13 +110,19 @@ export const EMPTY_SNAPSHOT: GameSnapshot = {
   timeRemainingMs: 0,
   shrinkStage: 0,
   roundNumber: 0,
+  modeId: "",
+  modeNumber: 0,
+  modeTitle: "",
+  modeElapsedMs: 0,
   removedSpecies: "",
   expectedRelations: 0,
   players: [],
   plants: [],
   animals: [],
+  populations: [],
   observedRelations: [],
   blueRelations: [],
   individualRelations: [],
   experiment: null,
+  modeResult: null,
 };

@@ -11,9 +11,12 @@ import {
   WORLD_OBSTACLES,
   WORLD_WIDTH,
   canEat,
-  foodsFor,
   isPlayableSpeciesId,
+  isGameModeId,
+  isSpeciesId,
+  modeConfig,
   isWithinEatReach,
+  type GameModeId,
   type PlayableSpeciesId,
   type SpeciesId,
 } from "@feed-chain/shared";
@@ -64,10 +67,17 @@ export interface GameTestStatus {
   totalRelations: number;
   timeRemainingMs: number;
   position: { x: number; y: number };
+  populationCount: number;
+  status: "active" | "respawning" | "ghost" | "extinct";
+  modeId: GameModeId;
+  modeNumber: number;
+  modeTitle: string;
 }
 
 interface GameTestSceneOptions {
   initialSpeciesId: PlayableSpeciesId;
+  initialModeId: GameModeId;
+  initialRemovedSpecies?: SpeciesId;
   onReady: (scene: GameTestScene) => void;
   onStatus: (status: GameTestStatus) => void;
 }
@@ -75,6 +85,8 @@ interface GameTestSceneOptions {
 export class GameTestScene extends Phaser.Scene {
   private readonly options: GameTestSceneOptions;
   private speciesId: PlayableSpeciesId;
+  private modeId: GameModeId;
+  private removedSpecies?: SpeciesId;
   private player?: Phaser.GameObjects.Container;
   private atlasSprite?: Phaser.GameObjects.Image;
   private speciesSprite?: Phaser.GameObjects.Sprite;
@@ -101,11 +113,16 @@ export class GameTestScene extends Phaser.Scene {
   private discoveredFoods = new Set<SpeciesId>();
   private speciesAction: "sick" | "snatch" | null = null;
   private speciesActionTimer?: Phaser.Time.TimerEvent;
+  private populationCount = 1;
+  private playerStatus: GameTestStatus["status"] = "active";
+  private modeStartedAt = 0;
 
   constructor(options: GameTestSceneOptions) {
     super("game-test");
     this.options = options;
     this.speciesId = options.initialSpeciesId;
+    this.modeId = options.initialModeId;
+    this.removedSpecies = options.initialRemovedSpecies;
   }
 
   preload(): void {
@@ -150,6 +167,7 @@ export class GameTestScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player!, true, 0.13, 0.13);
     this.cameras.main.setZoom(1.08);
     this.options.onReady(this);
+    this.modeStartedAt = this.time.now;
     this.emitStatus(0, true);
   }
 
@@ -186,7 +204,34 @@ export class GameTestScene extends Phaser.Scene {
 
   setSpecies(speciesId: string): void {
     if (!isPlayableSpeciesId(speciesId)) return;
+    const mode = modeConfig(this.modeId, this.removedSpecies);
+    if (!mode.playableSpecies.includes(speciesId)) return;
     this.speciesId = speciesId;
+    this.skillReadyAt = 0;
+    this.skillActiveUntil = 0;
+    this.eatReadyAt = 0;
+    this.wrongUntil = 0;
+    this.hunger = 100;
+    this.score = 0;
+    this.populationCount = 1;
+    this.playerStatus = "active";
+    this.discoveredFoods.clear();
+    this.targets.forEach((target) => { target.active = true; target.visual.setVisible(true); });
+    this.stopSpeciesAction();
+    this.updateRoleVisual();
+    this.burst(0xffe57a, `${SPECIES[speciesId].name} 역할`);
+    this.emitStatus(this.time.now, true);
+  }
+
+  setMode(modeId: string, removedSpecies?: string): void {
+    if (!isGameModeId(modeId)) return;
+    this.modeId = modeId;
+    this.removedSpecies = removedSpecies && isSpeciesId(removedSpecies) ? removedSpecies : modeId === "web_removal" ? "frog" : undefined;
+    const mode = modeConfig(this.modeId, this.removedSpecies);
+    if (!mode.playableSpecies.includes(this.speciesId)) {
+      this.speciesId = mode.playableSpecies[0] ?? "hawk";
+    }
+    this.modeStartedAt = this.time.now;
     this.skillReadyAt = 0;
     this.skillActiveUntil = 0;
     this.eatReadyAt = 0;
@@ -195,8 +240,9 @@ export class GameTestScene extends Phaser.Scene {
     this.score = 0;
     this.discoveredFoods.clear();
     this.stopSpeciesAction();
-    this.updateRoleVisual();
-    this.burst(0xffe57a, `${SPECIES[speciesId].name} 역할`);
+    this.populationCount = 1;
+    this.playerStatus = "active";
+    this.burst(0xffe57a, `${mode.number}번 게임`);
     this.emitStatus(this.time.now, true);
   }
 
@@ -240,6 +286,7 @@ export class GameTestScene extends Phaser.Scene {
       this.discoveredFoods.add(target.speciesId);
       this.score = Math.round((this.score + (firstDiscovery ? 2 : 0.1)) * 10) / 10;
       this.hunger = Math.min(100, this.hunger + 28);
+      this.populationCount = Math.min(99, this.populationCount + 1);
       target.active = false;
       target.visual.setVisible(false);
       this.time.delayedCall(4200, () => {
@@ -407,7 +454,7 @@ export class GameTestScene extends Phaser.Scene {
 
   private createTargets(): void {
     PLANT_SPAWN_POINTS.slice(0, 32).forEach((point, index) => {
-      const speciesId = index % 3 === 0 ? "berry" : "grass";
+      const speciesId: SpeciesId = (index % 4 === 0 ? "berry" : index % 4 === 1 ? "acorn" : index % 4 === 2 ? "clover" : "grass");
       this.targets.push(this.createTarget(`plant-${index}`, speciesId, point.x, point.y));
     });
     const animalSpecies = PLAYABLE_SPECIES.map((species) => species.id);
@@ -424,7 +471,7 @@ export class GameTestScene extends Phaser.Scene {
 
   private createTarget(id: string, speciesId: SpeciesId, x: number, y: number): TestTarget {
     let visual: Phaser.GameObjects.Container;
-    if (speciesId === "grass" || speciesId === "berry") {
+    if (speciesId === "grass" || speciesId === "berry" || speciesId === "acorn" || speciesId === "clover") {
       const sprite = this.add.graphics();
       sprite.fillStyle(0x295f36, 0.45).fillRect(-18, 15, 38, 9);
       if (speciesId === "berry") {
@@ -432,6 +479,14 @@ export class GameTestScene extends Phaser.Scene {
         sprite.fillStyle(0x1f5933).fillRect(-17, -22, 36, 27);
         sprite.fillStyle(0x3f8445).fillRect(-12, -28, 25, 20);
         sprite.fillStyle(0xd65a4f).fillRect(-10, -17, 5, 5).fillRect(7, -12, 5, 5).fillRect(-1, -25, 5, 5);
+      } else if (speciesId === "acorn") {
+        sprite.fillStyle(0x674125).fillRect(-5, -10, 10, 27);
+        sprite.fillStyle(0xb77942).fillRect(-14, -20, 28, 16);
+        sprite.fillStyle(0x8e5b31).fillRect(-10, -24, 20, 6);
+      } else if (speciesId === "clover") {
+        sprite.fillStyle(0x2e733c).fillRect(-3, -1, 6, 28);
+        sprite.fillStyle(0x74c947).fillRect(-17, -17, 13, 13).fillRect(4, -17, 13, 13).fillRect(-7, -29, 14, 13);
+        sprite.fillStyle(0xa6e36a).fillRect(-12, -13, 5, 5).fillRect(8, -13, 5, 5).fillRect(-3, -25, 5, 5);
       } else {
         sprite.fillStyle(0x2e733c).fillRect(-14, -7, 7, 26).fillRect(-3, -18, 7, 38).fillRect(8, -10, 7, 29);
         sprite.fillStyle(0x79ad4f).fillRect(-11, -3, 5, 14).fillRect(0, -14, 5, 18).fillRect(11, -6, 5, 16);
@@ -451,8 +506,9 @@ export class GameTestScene extends Phaser.Scene {
   private nearestTarget(): TestTarget | undefined {
     if (!this.player) return undefined;
     const facingPoint = { x: this.player.x, y: this.player.y, facingX: this.facing.x, facingY: this.facing.y };
+    const config = modeConfig(this.modeId, this.removedSpecies);
     return this.targets
-      .filter((target) => target.active && Math.hypot(target.x - this.player!.x, target.y - this.player!.y) <= EAT_RANGE && isWithinEatReach(facingPoint, target))
+      .filter((target) => target.active && config.activeSpecies.includes(target.speciesId) && Math.hypot(target.x - this.player!.x, target.y - this.player!.y) <= EAT_RANGE && isWithinEatReach(facingPoint, target))
       .sort((a, b) => Math.hypot(a.x - this.player!.x, a.y - this.player!.y) - Math.hypot(b.x - this.player!.x, b.y - this.player!.y))[0];
   }
 
@@ -535,6 +591,8 @@ export class GameTestScene extends Phaser.Scene {
     if (!this.player || (!force && time - this.lastStatusAt < 100)) return;
     this.lastStatusAt = time;
     const species = SPECIES[this.speciesId];
+    const config = modeConfig(this.modeId, this.removedSpecies);
+    const elapsed = Math.max(0, time - this.modeStartedAt);
     this.options.onStatus({
       speciesId: this.speciesId,
       skillName: species.skill?.name ?? "스킬 없음",
@@ -545,9 +603,14 @@ export class GameTestScene extends Phaser.Scene {
       hunger: this.hunger,
       score: this.score,
       discovered: this.discoveredFoods.size,
-      totalRelations: foodsFor(this.speciesId).length,
-      timeRemainingMs: Math.max(0, 5 * 60 * 1000 - time),
+      totalRelations: config.relations.filter((edge) => edge.predator === this.speciesId).length,
+      timeRemainingMs: Math.max(0, config.durationMs - elapsed),
       position: { x: Math.round(this.player.x), y: Math.round(this.player.y) },
+      populationCount: this.populationCount,
+      status: this.playerStatus,
+      modeId: this.modeId,
+      modeNumber: config.number,
+      modeTitle: config.title,
     });
   }
 }

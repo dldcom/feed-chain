@@ -5,11 +5,13 @@ import {
   WORLD_HEIGHT,
   WORLD_OBSTACLES,
   WORLD_WIDTH,
+  isGameModeId,
+  modeConfig,
   isSpeciesId,
   isWithinEatReach,
   shrinkBounds,
 } from "@feed-chain/shared";
-import { movementRenderPose, tickMovementNetcode } from "../network/movementNetcode";
+import { movementLogicPose, movementRenderPose, tickMovementNetcode } from "../network/movementNetcode";
 import { useGameStore } from "../store/gameStore";
 import type { AnimalSnapshot, PlantSnapshot, PlayerSnapshot } from "../types";
 import {
@@ -43,6 +45,7 @@ interface PlayerVisual {
   emoji: Phaser.GameObjects.Image;
   speciesSprite: Phaser.GameObjects.Sprite;
   label: Phaser.GameObjects.Text;
+  population: Phaser.GameObjects.Text;
   status: Phaser.GameObjects.Text;
   direction: Phaser.GameObjects.Triangle;
   targetX: number;
@@ -124,7 +127,7 @@ export class GameScene extends Phaser.Scene {
     this.syncEatTarget(state.snapshot.players, state.snapshot.plants, state.snapshot.animals, state.selfId);
     if (state.effect && state.effect.id !== this.lastEffectId) {
       this.lastEffectId = state.effect.id;
-      this.playActionEffect(state.effect.kind, state.effect.actorId, state.effect.targetId);
+      this.playActionEffect(state.effect.kind, state.effect.actorId, state.effect.targetId, state.effect.delta);
     }
     this.drawShrinkBoundary(state.snapshot.shrinkStage);
     if (!state.selfId || !state.snapshot.players.some((player) => player.id === state.selfId)) {
@@ -222,11 +225,19 @@ export class GameScene extends Phaser.Scene {
           backgroundColor: "#173d2ccc",
           padding: { x: 7, y: 3 },
         }).setOrigin(0.5);
+        const population = this.add.text(0, 62, "개체수 1", {
+          fontFamily: "Arial, sans-serif",
+          fontStyle: "bold",
+          fontSize: "12px",
+          color: "#fff2a4",
+          backgroundColor: "#173d2ccc",
+          padding: { x: 6, y: 2 },
+        }).setOrigin(0.5);
         const status = this.add.text(0, -48, "", { fontSize: "20px", fontStyle: "bold", color: "#fff" }).setOrigin(0.5);
         const direction = this.add.triangle(0, 34, 0, -8, -6, 7, 6, 7, 0xffed82, 0.95).setStrokeStyle(2, 0x173d2c);
-        const container = this.add.container(renderPosition.x, renderPosition.y, [direction, body, emoji, speciesSprite, label, status]).setDepth(player.id === selfId ? 20 : 10);
+        const container = this.add.container(renderPosition.x, renderPosition.y, [direction, body, emoji, speciesSprite, label, population, status]).setDepth(player.id === selfId ? 20 : 10);
         visual = {
-          container, body, emoji, speciesSprite, label, status, direction,
+          container, body, emoji, speciesSprite, label, population, status, direction,
           targetX: renderPosition.x, targetY: renderPosition.y,
           speciesId: player.species, speciesAction: null,
         };
@@ -237,12 +248,13 @@ export class GameScene extends Phaser.Scene {
       visual.targetX = renderPosition.x;
       visual.targetY = renderPosition.y;
       visual.body.setFillStyle(species.color);
+      visual.population.setText(`개체수 ${Math.max(0, player.populationCount)}`);
       this.updatePlayerSpeciesVisual(visual, player.species, renderPosition.facingX, renderPosition.facingY, moving);
       const facingAngle = Math.atan2(renderPosition.facingY, renderPosition.facingX);
       visual.direction.setPosition(Math.cos(facingAngle) * 36, Math.sin(facingAngle) * 36).setRotation(facingAngle + Math.PI / 2);
-      visual.container.setAlpha(player.status === "ghost" || player.status === "extinct" ? 0.45 : player.stealth ? 0.25 : 1);
+      visual.container.setAlpha(player.status === "ghost" || player.status === "respawning" ? 0.45 : player.status === "extinct" ? 0.2 : player.stealth ? 0.25 : 1);
       visual.container.setScale(player.shielded ? 0.82 : 1);
-      visual.status.setText(player.wrongUntil > Date.now() ? "😵 배탈" : player.shielded ? "🪨 방어" : player.escapeUntil > Date.now() ? "💨 탈출" : player.status === "ghost" ? "👻" : player.status === "extinct" ? "관찰 중" : "");
+      visual.status.setText(player.wrongUntil > Date.now() ? "😵 배탈" : player.shielded ? "🪨 방어" : player.escapeUntil > Date.now() ? "💨 탈출" : player.status === "respawning" ? "⏳" : player.status === "ghost" ? "👻" : player.status === "extinct" ? "관찰 중" : "");
       if (isSpriteSpecies(player.species) && hasSickSprite(player.species) && player.wrongUntil > Date.now()) {
         if (visual.speciesAction !== "sick") this.playSpeciesSick(visual, player.species, renderPosition.facingX, renderPosition.facingY, player.wrongUntil - Date.now());
       } else if (visual.speciesAction === "sick") {
@@ -252,8 +264,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncPlants(plants: PlantSnapshot[]): void {
+    const ids = new Set(plants.map((plant) => plant.id));
+    this.plants.forEach((container, id) => {
+      if (!ids.has(id)) {
+        container.destroy(true);
+        this.plants.delete(id);
+      }
+    });
     plants.forEach((plant) => {
       let container = this.plants.get(plant.id);
+      if (container && container.getData("species") !== plant.species) {
+        container.destroy(true);
+        this.plants.delete(plant.id);
+        container = undefined;
+      }
       if (!container) {
         const sprite = this.add.graphics();
         sprite.fillStyle(0x295f36, 0.45).fillRect(-18, 15, 38, 9);
@@ -262,13 +286,22 @@ export class GameScene extends Phaser.Scene {
           sprite.fillStyle(0x1f5933).fillRect(-17, -22, 36, 27);
           sprite.fillStyle(0x3f8445).fillRect(-12, -28, 25, 20);
           sprite.fillStyle(0xd65a4f).fillRect(-10, -17, 5, 5).fillRect(7, -12, 5, 5).fillRect(-1, -25, 5, 5);
+        } else if (plant.species === "acorn") {
+          sprite.fillStyle(0x674125).fillRect(-5, -10, 10, 27);
+          sprite.fillStyle(0xb77942).fillRect(-14, -20, 28, 16);
+          sprite.fillStyle(0x8e5b31).fillRect(-10, -24, 20, 6);
+        } else if (plant.species === "clover") {
+          sprite.fillStyle(0x2e733c).fillRect(-3, -1, 6, 28);
+          sprite.fillStyle(0x74c947).fillRect(-17, -17, 13, 13).fillRect(4, -17, 13, 13).fillRect(-7, -29, 14, 13);
+          sprite.fillStyle(0xa6e36a).fillRect(-12, -13, 5, 5).fillRect(8, -13, 5, 5).fillRect(-3, -25, 5, 5);
         } else {
           sprite.fillStyle(0x2e733c).fillRect(-14, -7, 7, 26).fillRect(-3, -18, 7, 38).fillRect(8, -10, 7, 29);
           sprite.fillStyle(0x79ad4f).fillRect(-11, -3, 5, 14).fillRect(0, -14, 5, 18).fillRect(11, -6, 5, 16);
         }
-        container = this.add.container(plant.x, plant.y, [sprite]).setDepth(5);
+        container = this.add.container(plant.x, plant.y, [sprite]).setDepth(5).setData("species", plant.species);
         this.plants.set(plant.id, container);
       }
+      container.setPosition(plant.x, plant.y);
       container.setVisible(plant.active);
     });
   }
@@ -288,16 +321,20 @@ export class GameScene extends Phaser.Scene {
         const body = this.add.circle(0, 0, 23, species.color, 0.9).setStrokeStyle(3, 0xfff4b0);
         const emoji = this.add.image(0, -1, "species-atlas");
         this.setSpeciesSprite(emoji, animal.species, 44);
-        const label = this.add.text(0, 34, "새끼", { fontSize: "11px", fontStyle: "bold", color: "#fff", backgroundColor: "#274f3dcc", padding: { x: 5, y: 2 } }).setOrigin(0.5);
+        const label = this.add.text(0, 34, animal.fixed ? "NPC" : "새끼", { fontSize: "11px", fontStyle: "bold", color: "#fff", backgroundColor: "#274f3dcc", padding: { x: 5, y: 2 } }).setOrigin(0.5);
+        const population = this.add.text(0, 50, "개체수 1", { fontSize: "10px", fontStyle: "bold", color: "#fff2a4", backgroundColor: "#274f3dcc", padding: { x: 4, y: 1 } }).setOrigin(0.5);
         const status = this.add.text(0, -38, "", { fontSize: "14px" }).setOrigin(0.5);
         const direction = this.add.triangle(0, 29, 0, -6, -5, 6, 5, 6, 0xffed82, 0).setVisible(false);
-        const container = this.add.container(animal.x, animal.y, [direction, body, emoji, label, status]).setDepth(8);
-        visual = { container, body, emoji, label, status, direction, targetX: animal.x, targetY: animal.y };
+        const container = this.add.container(animal.x, animal.y, [direction, body, emoji, label, population, status]).setDepth(8);
+        visual = { container, body, emoji, label, population, status, direction, targetX: animal.x, targetY: animal.y };
         this.animals.set(animal.id, visual);
       }
       visual.targetX = animal.x;
       visual.targetY = animal.y;
+      visual.label.setText(animal.fixed ? "NPC" : "새끼");
+      visual.population.setText(`개체수 ${Math.max(0, animal.populationCount)}`);
       visual.status.setText(animal.hunger < 25 ? "🍽️" : "");
+      visual.container.setAlpha(animal.status === "ghost" || animal.status === "respawning" ? 0.45 : animal.extinct ? 0.2 : 1);
       visual.container.x = Phaser.Math.Linear(visual.container.x, visual.targetX, 0.35);
       visual.container.y = Phaser.Math.Linear(visual.container.y, visual.targetY, 0.35);
     });
@@ -305,16 +342,24 @@ export class GameScene extends Phaser.Scene {
 
   private syncEatTarget(players: PlayerSnapshot[], plants: PlantSnapshot[], animals: AnimalSnapshot[], selfId: string): void {
     const self = players.find((player) => player.id === selfId);
-    const pose = self ? movementRenderPose(selfId) ?? self : null;
+    // Use the reconciler's exact predicted pose for interaction logic. The
+    // rendered pose is intentionally smoothed and may trail the hit position.
+    const pose = self ? movementLogicPose(selfId) ?? self : null;
     if (!self || !pose || self.status !== "active") {
       this.targetRing?.setVisible(false);
       this.targetHint?.setVisible(false);
       return;
     }
+    const modeId = this.readModeId();
+    const removedSpecies = this.readRemovedSpecies();
+    const configuredMode = isGameModeId(modeId)
+      ? modeConfig(modeId, isSpeciesId(removedSpecies) ? removedSpecies : undefined)
+      : null;
+    const activeSpecies: Set<string> | null = configuredMode ? new Set<string>(configuredMode.activeSpecies) : null;
     const candidates = [
-      ...players.filter((player) => player.id !== selfId && player.status === "active"),
-      ...plants.filter((plant) => plant.active),
-      ...animals,
+      ...players.filter((player) => player.id !== selfId && player.status === "active" && (!activeSpecies || activeSpecies.has(player.species))),
+      ...plants.filter((plant) => plant.active && (!activeSpecies || activeSpecies.has(plant.species))),
+      ...animals.filter((animal) => animal.status === "active" && !animal.extinct && (!activeSpecies || activeSpecies.has(animal.species))),
     ].map((target) => ({ target, distance: Math.hypot(target.x - pose.x, target.y - pose.y) }))
       .filter(({ target, distance }) => distance <= EAT_RANGE && isWithinEatReach(pose, target))
       .sort((a, b) => a.distance - b.distance);
@@ -326,6 +371,14 @@ export class GameScene extends Phaser.Scene {
     }
     this.targetRing?.setPosition(selected.x, selected.y).setVisible(true);
     this.targetHint?.setPosition(selected.x, selected.y - 51).setVisible(true);
+  }
+
+  private readModeId(): string {
+    return useGameStore.getState().snapshot.modeId;
+  }
+
+  private readRemovedSpecies(): string {
+    return useGameStore.getState().snapshot.removedSpecies;
   }
 
   private setSpeciesSprite(image: Phaser.GameObjects.Image, speciesId: string, size: number): void {
@@ -349,11 +402,12 @@ export class GameScene extends Phaser.Scene {
     return this.players.get(id)?.container ?? this.animals.get(id)?.container ?? this.plants.get(id);
   }
 
-  private playActionEffect(kind: string, actorId: string, targetId?: string): void {
+  private playActionEffect(kind: string, actorId: string, targetId?: string, delta = 0): void {
     const actor = this.players.get(actorId);
-    const target = this.visualObject(targetId) ?? actor?.container;
+    const actorObject = this.visualObject(actorId);
+    const target = this.visualObject(targetId) ?? actorObject;
     if (!target) return;
-    const color = kind === "eat" ? 0xffdf65 : kind === "wrong" ? 0xb56cff : kind === "blocked" ? 0x8ed8ff : 0x70cfff;
+    const color = kind === "eat" ? 0xffdf65 : kind === "wrong" ? 0xb56cff : kind === "blocked" ? 0x8ed8ff : kind === "population" ? 0xffdf65 : 0x70cfff;
     const ring = this.add.circle(target.x, target.y, 26, color, 0.12).setStrokeStyle(6, color, 0.95).setDepth(40);
     this.tweens.add({ targets: ring, scale: 2.1, alpha: 0, duration: 420, ease: "Cubic.easeOut", onComplete: () => ring.destroy() });
 
@@ -374,6 +428,8 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: actor.emoji, angle: { from: -16, to: 16 }, duration: 70, repeat: 4, yoyo: true, onComplete: () => actor.emoji.setAngle(0) });
       }
       this.floatEffect(target.x, target.y - 30, "우욱…", "#e5b7ff");
+    } else if (kind === "population") {
+      this.floatEffect(target.x, target.y - 45, delta >= 0 ? `+${delta}` : `${delta}`, delta >= 0 ? "#fff099" : "#ffaaa0");
     } else if (kind === "blocked") {
       this.floatEffect(target.x, target.y - 30, "튕!", "#bdeaff");
     } else if (kind === "respawn") {

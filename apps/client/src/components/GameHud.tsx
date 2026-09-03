@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { EAT_COOLDOWN_MS, foodsFor, isPlayableSpeciesId, SPECIES } from "@feed-chain/shared";
+import { EAT_COOLDOWN_MS, foodsFor, isGameModeId, isPlayableSpeciesId, isSpeciesId, modeConfig, SPECIES } from "@feed-chain/shared";
 import { eatNearest, useSkill } from "../network/gameClient";
 import { useGameStore } from "../store/gameStore";
 import { VirtualJoystick } from "./VirtualJoystick";
@@ -17,6 +17,10 @@ export interface GameHudTestState {
   skillRemainingMs: number;
   eatRemainingMs: number;
   active: boolean;
+  populationCount?: number;
+  status?: string;
+  modeNumber?: number;
+  modeTitle?: string;
   wrongRemainingMs: number;
   paused: boolean;
   onInput: (x: number, y: number) => void;
@@ -38,11 +42,19 @@ export function GameHud({ testState }: { testState?: GameHudTestState } = {}): J
     ? testState.speciesId
     : player && isPlayableSpeciesId(player.species) ? player.species : "grasshopper";
   const species = SPECIES[speciesId];
-  const discovered = testState?.discovered ?? snapshot.observedRelations.filter((edge) => edge.predator === speciesId).length;
-  const total = testState?.totalRelations ?? foodsFor(speciesId).length;
+  const configuredMode = isGameModeId(snapshot.modeId)
+    ? modeConfig(snapshot.modeId, isSpeciesId(snapshot.removedSpecies) ? snapshot.removedSpecies : undefined)
+    : null;
+  const modeFoods = configuredMode?.relations.filter((edge) => edge.predator === speciesId).length;
+  const discovered = testState?.discovered ?? snapshot.observedRelations.filter((edge) => edge.predator === speciesId && (!configuredMode || configuredMode.relations.some((relation) => relation.prey === edge.prey && relation.predator === edge.predator))).length;
+  const total = testState?.totalRelations ?? modeFoods ?? foodsFor(speciesId).length;
   const skillRemaining = testState?.skillRemainingMs ?? Math.max(0, (player?.skillReadyAt ?? 0) - now);
   const eatRemaining = testState?.eatRemainingMs ?? Math.max(0, (player?.eatReadyAt ?? 0) - now);
   const active = testState?.active ?? player?.status === "active";
+  const populationCount = Math.max(0, testState?.populationCount ?? player?.populationCount ?? 1);
+  const status = testState?.status ?? player?.status ?? "active";
+  const modeNumber = testState?.modeNumber ?? snapshot.modeNumber;
+  const modeTitle = testState?.modeTitle ?? snapshot.modeTitle;
   const wrongRemaining = testState?.wrongRemainingMs ?? Math.max(0, (player?.wrongUntil ?? 0) - now);
   const skillCooldown = species.skill?.cooldownMs ?? 1;
   const cooldownStyle = (ratio: number) => ({ "--cooldown-angle": `${Math.max(0, Math.min(1, ratio)) * 360}deg` } as CSSProperties);
@@ -66,13 +78,14 @@ export function GameHud({ testState }: { testState?: GameHudTestState } = {}): J
       </div>
 
       <div className="round-timer">
-        <small>{(testState?.roundNumber ?? snapshot.roundNumber) ? `${testState?.roundNumber ?? snapshot.roundNumber}판` : "생태계 실험"}</small>
+        <small>{modeTitle ? `${modeNumber ? `${modeNumber}판 · ` : ""}${modeTitle}` : (testState?.roundNumber ?? snapshot.roundNumber) ? `${testState?.roundNumber ?? snapshot.roundNumber}판` : "생태계 실험"}</small>
         <strong>{formatTime(testState?.timeRemainingMs ?? snapshot.timeRemainingMs)}</strong>
         {(testState?.shrinkStage ?? snapshot.shrinkStage) > 0 && <span>⚠️ 서식 공간 축소 {testState?.shrinkStage ?? snapshot.shrinkStage}/2</span>}
       </div>
 
       <div className="hud-top-right">
         <div className="discovery-chip">🔗 내 관계 <strong>{discovered}/{total}</strong></div>
+        <div className="population-chip">🐾 개체수 <strong>{populationCount}</strong></div>
         <div className="score-chip">✨ {(testState?.score ?? player?.score ?? 0).toFixed(1)}</div>
       </div>
 
@@ -96,6 +109,13 @@ export function GameHud({ testState }: { testState?: GameHudTestState } = {}): J
           <span>👻</span>
           <strong>생태 관찰자</strong>
           <small>{Math.max(0, Math.ceil((player.ghostUntil - now) / 1000))}초 뒤 같은 생물로 돌아가요</small>
+        </div>
+      )}
+      {status === "respawning" && (
+        <div className="center-banner respawn-banner">
+          <span>⏳</span>
+          <strong>잠시 후 다시 나타나요</strong>
+          <small>{Math.max(0, Math.ceil(((player?.respawnAt ?? 0) - now) / 1000))}초 뒤 다른 장소에서 시작해요</small>
         </div>
       )}
       {player?.status === "extinct" && <div className="center-banner ghost-banner"><span>🔍</span><strong>관찰 모드</strong><small>생태계의 변화를 살펴보세요</small></div>}

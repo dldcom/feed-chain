@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SPECIES, isSpeciesId, type PopulationPoint, type SimulationResult, type SpeciesId } from "@feed-chain/shared";
+import { SPECIES, isGameModeId, isSpeciesId, modeConfig, type ModeResult, type PlayableSpeciesId, type SimulationResult, type SpeciesId } from "@feed-chain/shared";
 import { useGameStore } from "../store/gameStore";
 import { IntermissionScreen } from "./IntermissionScreen";
 
@@ -85,6 +85,98 @@ export function FinalResultsScreen(): JSX.Element {
         <section className="result-card result-b"><h2>B · 완성한 먹이그물</h2><TrendChart result={comparison.b} color="#4ca8ff" /><p>추가로 사라진 생물 <strong>{comparison.b.extinctSpecies.length}종</strong></p></section>
       </div>
       <div className="conclusion-bubble"><span>💡</span><strong>{conclusion}</strong></div>
+    </main>
+  );
+}
+
+function modeTime(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(seconds / 60)}분 ${String(seconds % 60).padStart(2, "0")}초`;
+}
+
+function chainOrder(result: ModeResult): SpeciesId[] {
+  if (!isGameModeId(result.modeId)) return [];
+  const config = modeConfig(result.modeId, isSpeciesId(result.removedSpecies) ? result.removedSpecies : undefined);
+  const predators = new Set(config.relations.map((edge) => edge.predator));
+  const start = config.activeSpecies.find((species) => !predators.has(species));
+  if (!start) return [...config.activeSpecies];
+  const order: SpeciesId[] = [start];
+  while (order.length < config.activeSpecies.length) {
+    const next = config.relations.find((edge) => edge.prey === order[order.length - 1])?.predator;
+    if (!next || order.includes(next)) break;
+    order.push(next);
+  }
+  return order;
+}
+
+function ModePopulationChart({ result, ids }: { result: ModeResult; ids: readonly SpeciesId[] }): JSX.Element {
+  const width = 760;
+  const height = 220;
+  const max = Math.max(1, ...result.timeline.flatMap((point) => ids.map((id) => point.populations[id] ?? 0)));
+  return (
+    <div className="mode-chart-wrap">
+      <div className="mode-chart-legend">
+        {ids.map((id) => <span key={id}><i style={{ background: SPECIES[id].cssColor }} />{SPECIES[id].emoji} {SPECIES[id].name}</span>)}
+      </div>
+      <svg className="mode-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="시간에 따른 개체수 변화">
+        {[0, 1, 2, 3, 4].map((line) => <line key={line} x1="32" x2={width - 14} y1={18 + line * 42} y2={18 + line * 42} stroke="#ffffff22" />)}
+        {ids.map((id) => {
+          const points = result.timeline.map((point, index) => `${32 + (index / Math.max(1, result.timeline.length - 1)) * (width - 48)},${height - 20 - ((point.populations[id] ?? 0) / max) * (height - 40)}`).join(" ");
+          return <polyline key={id} points={points} fill="none" stroke={SPECIES[id].cssColor} strokeWidth="4" />;
+        })}
+      </svg>
+    </div>
+  );
+}
+
+export function ModeResultScreen(): JSX.Element {
+  const result = useGameStore((state) => state.snapshot.modeResult);
+  const [selectedSpecies, setSelectedSpecies] = useState<PlayableSpeciesId | null>(null);
+  if (!result || !isGameModeId(result.modeId)) {
+    return <IntermissionScreen icon="📊" title="게임 결과를 준비하고 있어요" copy="잠시만 기다려 주세요." />;
+  }
+  const config = modeConfig(result.modeId, isSpeciesId(result.removedSpecies) ? result.removedSpecies : undefined);
+  const chain = chainOrder(result);
+  const ids = config.activeSpecies.filter((id) => (result.timeline[0]?.populations[id] ?? result.finalPopulations[id] ?? 0) > 0 || id === result.removedSpecies);
+  const playableIds = config.playableSpecies.filter((id) => result.players.some((player) => player.species === id));
+  const rankingSpecies = selectedSpecies && playableIds.includes(selectedSpecies) ? selectedSpecies : playableIds[0];
+  const ranking = rankingSpecies
+    ? result.players.filter((player) => player.species === rankingSpecies).sort((a, b) => b.finalPopulation - a.finalPopulation || b.successfulEats - a.successfulEats)
+    : [];
+
+  return (
+    <main className="mode-result-screen">
+      <header className="mode-result-header">
+        <div><small>{config.number}번 게임 · {modeTime(result.durationMs)}</small><h1>{config.title}</h1></div>
+        {result.modeId === "chain_removal"
+          ? <div className="removed-badge">🐸 개구리 플레이어 없음 · NPC로 관찰</div>
+          : result.removedSpecies && isSpeciesId(result.removedSpecies) && <div className="removed-badge">🚫 {SPECIES[result.removedSpecies].name} 없음</div>}
+      </header>
+      <section className="mode-result-summary">
+        <div className="mode-population-grid">
+          <small className="mode-population-caption">종별 최종 개체수 합계</small>
+          {ids.map((id) => <article key={id} className={(result.finalPopulations[id] ?? 0) === 0 ? "extinct" : ""}>
+            <span>{SPECIES[id].emoji}</span><small>{SPECIES[id].name}</small><strong>{result.finalPopulations[id] ?? 0}</strong><em>최고 {result.peakPopulations[id] ?? 0}</em>
+          </article>)}
+        </div>
+        <div className="mode-chain-card">
+          <small>{config.kind === "chain" ? "이번 게임의 먹이사슬" : "이번 게임에서 확인한 먹이 관계"}</small>
+          {config.kind === "chain" ? (
+            <div className="mode-chain-flow">{chain.map((id, index) => <span key={id}><b>{SPECIES[id].emoji}</b><small>{SPECIES[id].name}</small>{index < chain.length - 1 && <i>→</i>}</span>)}</div>
+          ) : (
+            <div className="mode-relation-list">{(result.observedRelations.length ? result.observedRelations : config.relations).map((edge) => <span key={`${edge.prey}-${edge.predator}`}><b>{SPECIES[edge.prey].emoji} {SPECIES[edge.prey].name}</b> → {SPECIES[edge.predator].emoji} {SPECIES[edge.predator].name}</span>)}</div>
+          )}
+        </div>
+      </section>
+      <section className="mode-result-chart-card">
+        <header><h2>시간에 따른 개체수 변화</h2><small>{result.timeline.length}개 시점 기록</small></header>
+        <ModePopulationChart result={result} ids={ids.length ? ids : config.activeSpecies} />
+      </section>
+      {playableIds.length > 0 && <section className="mode-ranking-card">
+        <header><h2>플레이어 개체수 순위</h2><small>생물을 눌러 순위를 바꿔 보세요.</small></header>
+        <div className="ranking-species-tabs">{playableIds.map((id) => <button key={id} className={id === rankingSpecies ? "active" : ""} onClick={() => setSelectedSpecies(id)}>{SPECIES[id].emoji} {SPECIES[id].name}</button>)}</div>
+        <ol>{ranking.map((player) => <li key={player.id}><span>{player.name}</span><strong>{player.finalPopulation}</strong><small>개체 · 먹기 {player.successfulEats}회</small></li>)}</ol>
+      </section>}
     </main>
   );
 }

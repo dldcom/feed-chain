@@ -8,7 +8,7 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3";
-import { SPECIES, isSpeciesId, relationKey, type SpeciesId } from "@feed-chain/shared";
+import { SPECIES, isGameModeId, isSpeciesId, modeConfig, relationKey, type SpeciesId } from "@feed-chain/shared";
 import { sendBlueEdge } from "../network/gameClient";
 import { useGameStore } from "../store/gameStore";
 
@@ -73,17 +73,21 @@ function SpeciesGraph(): JSX.Element {
   const [prey, setPrey] = useState<SpeciesId | null>(null);
   const [predator, setPredator] = useState<SpeciesId | null>(null);
   const observedKeys = new Set(snapshot.observedRelations.map((edge) => relationKey(edge.prey, edge.predator)));
+  const configuredMode = isGameModeId(snapshot.modeId)
+    ? modeConfig(snapshot.modeId, isSpeciesId(snapshot.removedSpecies) ? snapshot.removedSpecies : undefined)
+    : null;
+  const visibleSpecies = configuredMode ? new Set<string>(configuredMode.activeSpecies) : new Set<string>(Object.keys(SPECIES));
 
   const graph = useMemo(() => {
-    const nodes: GraphNode[] = (Object.keys(SPECIES) as SpeciesId[]).map((id) => ({
+    const nodes: GraphNode[] = (Object.keys(SPECIES) as SpeciesId[]).filter((id) => visibleSpecies.has(id)).map((id) => ({
       id,
       name: SPECIES[id].name,
       emoji: SPECIES[id].emoji,
       color: SPECIES[id].cssColor,
     }));
     const links: GraphLink[] = [
-      ...snapshot.observedRelations.filter((edge) => isSpeciesId(edge.prey) && isSpeciesId(edge.predator)).map((edge) => ({ source: edge.prey as SpeciesId, target: edge.predator as SpeciesId, key: relationKey(edge.prey, edge.predator), kind: "observed" as const, count: edge.count })),
-      ...snapshot.blueRelations.filter((edge) => isSpeciesId(edge.prey) && isSpeciesId(edge.predator)).map((edge) => ({ source: edge.prey as SpeciesId, target: edge.predator as SpeciesId, key: relationKey(edge.prey, edge.predator), kind: "blue" as const, count: edge.count })),
+      ...snapshot.observedRelations.filter((edge) => isSpeciesId(edge.prey) && isSpeciesId(edge.predator) && visibleSpecies.has(edge.prey) && visibleSpecies.has(edge.predator)).map((edge) => ({ source: edge.prey as SpeciesId, target: edge.predator as SpeciesId, key: relationKey(edge.prey, edge.predator), kind: "observed" as const, count: edge.count })),
+      ...snapshot.blueRelations.filter((edge) => isSpeciesId(edge.prey) && isSpeciesId(edge.predator) && visibleSpecies.has(edge.prey) && visibleSpecies.has(edge.predator)).map((edge) => ({ source: edge.prey as SpeciesId, target: edge.predator as SpeciesId, key: relationKey(edge.prey, edge.predator), kind: "blue" as const, count: edge.count })),
     ];
     const simulation = forceSimulation(nodes)
       .force("link", forceLink<GraphNode, GraphLink>(links).id((node) => node.id).distance(145).strength(0.7))
@@ -97,7 +101,7 @@ function SpeciesGraph(): JSX.Element {
       node.y = Math.max(70, Math.min(HEIGHT - 70, node.y ?? HEIGHT / 2));
     });
     return { nodes, links };
-  }, [snapshot.observedRelations, snapshot.blueRelations]);
+  }, [snapshot.observedRelations, snapshot.blueRelations, visibleSpecies]);
 
   const selectNode = (id: SpeciesId): void => {
     if (!prey || (prey && predator)) {
@@ -150,8 +154,12 @@ function SpeciesGraph(): JSX.Element {
 
 function IndividualGraph(): JSX.Element {
   const snapshot = useGameStore((state) => state.snapshot);
+  const configuredMode = isGameModeId(snapshot.modeId)
+    ? modeConfig(snapshot.modeId, isSpeciesId(snapshot.removedSpecies) ? snapshot.removedSpecies : undefined)
+    : null;
+  const visibleSpecies = configuredMode ? new Set<string>(configuredMode.activeSpecies) : null;
   const radius = 235;
-  const nodes = snapshot.players.map((player, index) => ({
+  const nodes = snapshot.players.filter((player) => !visibleSpecies || visibleSpecies.has(player.species)).map((player, index) => ({
     ...player,
     x: WIDTH / 2 + Math.cos((index / Math.max(1, snapshot.players.length)) * Math.PI * 2 - Math.PI / 2) * radius,
     y: HEIGHT / 2 + Math.sin((index / Math.max(1, snapshot.players.length)) * Math.PI * 2 - Math.PI / 2) * radius,

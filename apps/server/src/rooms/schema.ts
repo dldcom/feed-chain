@@ -27,6 +27,10 @@ export class PlayerState extends Schema {
   @type("number") timesEaten = 0;
   @type("number") survivalMs = 0;
   @type("number") livesEnded = 0;
+  /** Number of animals represented by this player; it is also the player's life pool. */
+  @type("number") populationCount = 1;
+  @type("number") lastFoodAt = 0;
+  @type("number") respawnAt = 0;
 }
 
 export class PlantState extends Schema {
@@ -36,6 +40,7 @@ export class PlantState extends Schema {
   @type("number") y = 0;
   @type("boolean") active = true;
   @type("number") respawnAt = 0;
+  @type("number") populationCount = 1;
 }
 
 export class AnimalNpcState extends Schema {
@@ -45,7 +50,21 @@ export class AnimalNpcState extends Schema {
   @type("number") y = 0;
   @type("number") hunger = 100;
   @type("number") meals = 0;
+  @type("string") status = "active";
   @type("number") reproduceReadyAt = 0;
+  @type("number") populationCount = 1;
+  @type("number") respawnAt = 0;
+  @type("number") ghostUntil = 0;
+  @type("number") lastFoodAt = 0;
+  @type("boolean") breedingEnabled = true;
+  @type("boolean") fixed = false;
+  @type("boolean") extinct = false;
+}
+
+export class PopulationState extends Schema {
+  @type("string") species = "grass";
+  @type("number") count = 0;
+  @type("number") peak = 0;
 }
 
 export class RelationState extends Schema {
@@ -69,12 +88,18 @@ export class GameState extends Schema {
   @type("number") timeRemainingMs = 0;
   @type("number") shrinkStage = 0;
   @type("number") roundNumber = 0;
+  @type("string") modeId = "";
+  @type("number") modeNumber = 0;
+  @type("string") modeTitle = "";
+  @type("number") modeElapsedMs = 0;
   @type("string") removedSpecies = "";
   @type("string") experimentJson = "";
+  @type("string") modeResultJson = "";
   @type("number") expectedRelations = 0;
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type({ map: PlantState }) plants = new MapSchema<PlantState>();
   @type({ map: AnimalNpcState }) animals = new MapSchema<AnimalNpcState>();
+  @type({ map: PopulationState }) populations = new MapSchema<PopulationState>();
   @type({ map: RelationState }) observedRelations = new MapSchema<RelationState>();
   @type({ map: RelationState }) blueRelations = new MapSchema<RelationState>();
   @type({ map: IndividualRelationState }) individualRelations = new MapSchema<IndividualRelationState>();

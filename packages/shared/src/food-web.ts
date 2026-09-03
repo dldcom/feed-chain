@@ -10,8 +10,12 @@ export const CANONICAL_FOOD_RELATIONS: readonly FoodRelation[] = [
   { prey: "grass", predator: "grasshopper" },
   { prey: "grass", predator: "caterpillar" },
   { prey: "grass", predator: "rabbit" },
+  { prey: "clover", predator: "grasshopper" },
+  { prey: "clover", predator: "caterpillar" },
+  { prey: "clover", predator: "rabbit" },
   { prey: "berry", predator: "squirrel" },
   { prey: "berry", predator: "bulbul" },
+  { prey: "acorn", predator: "squirrel" },
   { prey: "grasshopper", predator: "frog" },
   { prey: "grasshopper", predator: "bulbul" },
   { prey: "grasshopper", predator: "duck" },
@@ -54,4 +58,3 @@ export function predatorsFor(prey: SpeciesId): SpeciesId[] {
 export function relationDescription(prey: SpeciesId, predator: SpeciesId): string {
   return `${SPECIES[prey].name} → ${SPECIES[predator].name}`;
 }
-

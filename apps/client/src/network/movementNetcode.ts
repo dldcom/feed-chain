@@ -83,6 +83,30 @@ export function movementRenderPose(playerId: string): { x: number; y: number; fa
   };
 }
 
+/**
+ * Exact pose for game logic (hit tests, target selection, etc.).
+ *
+ * `movementRenderPose()` intentionally includes interpolation and smooth error
+ * correction. That makes it pleasant to draw, but it can trail the true
+ * reconciled position by a few pixels (and briefly disagree during a turn).
+ * Never use that display value for interaction validation: the reconciler's
+ * state is the current client prediction and the raw schema is the server
+ * snapshot fallback for non-controlled entities.
+ */
+export function movementLogicPose(playerId: string): { x: number; y: number; facingX: number; facingY: number } | null {
+  if (!context) return null;
+  const player = (context.room.state as any).players?.get(playerId);
+  if (!player) return null;
+  const exact = playerId === context.room.sessionId ? context.self?.state : undefined;
+  const source = exact ?? player;
+  return {
+    x: Number(source.x),
+    y: Number(source.y),
+    facingX: Number(source.facingX ?? 0),
+    facingY: Number(source.facingY ?? 1),
+  };
+}
+
 export function disposeMovementNetcode(): void {
   context?.predict.dispose();
   context = null;

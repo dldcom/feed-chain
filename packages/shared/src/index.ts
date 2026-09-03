@@ -1,5 +1,6 @@
 export * from "./food-web.js";
 export * from "./messages.js";
+export * from "./modes.js";
 export * from "./movement.js";
 export * from "./phases.js";
 export * from "./scoring.js";

@@ -1,8 +1,8 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { EAT_RANGE, isWithinEatReach, type ActionEffect, type ExperimentComparison, type GameNotice, type TeacherCommand } from "@feed-chain/shared";
-import { EMPTY_SNAPSHOT, type AnimalSnapshot, type GameSnapshot, type IndividualRelationSnapshot, type PlantSnapshot, type PlayerSnapshot, type RelationSnapshot } from "../types";
+import { EAT_RANGE, isGameModeId, isWithinEatReach, modeConfig, isSpeciesId, type ActionEffect, type ExperimentComparison, type GameNotice, type ModeResult, type TeacherCommand } from "@feed-chain/shared";
+import { EMPTY_SNAPSHOT, type AnimalSnapshot, type GameSnapshot, type IndividualRelationSnapshot, type PlantSnapshot, type PlayerSnapshot, type PopulationSnapshot, type RelationSnapshot } from "../types";
 import { useGameStore } from "../store/gameStore";
-import { configureMovementNetcode, disposeMovementNetcode, movementRenderPose } from "./movementNetcode";
+import { configureMovementNetcode, disposeMovementNetcode, movementLogicPose } from "./movementNetcode";
 
 const endpoint = import.meta.env.VITE_SERVER_URL ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
 const client = new Client(endpoint);
@@ -28,6 +28,13 @@ function serializeState(state: any): GameSnapshot {
   } catch {
     experiment = null;
   }
+  let modeResult: ModeResult | null = null;
+  try {
+    modeResult = state.modeResultJson ? JSON.parse(state.modeResultJson) : null;
+  } catch {
+    modeResult = null;
+  }
+  const modeId = typeof state.modeId === "string" && isGameModeId(state.modeId) ? state.modeId : "";
   return {
     ...EMPTY_SNAPSHOT,
     phase: state.phase ?? EMPTY_SNAPSHOT.phase,
@@ -36,6 +43,10 @@ function serializeState(state: any): GameSnapshot {
     timeRemainingMs: state.timeRemainingMs ?? EMPTY_SNAPSHOT.timeRemainingMs,
     shrinkStage: state.shrinkStage ?? EMPTY_SNAPSHOT.shrinkStage,
     roundNumber: state.roundNumber ?? EMPTY_SNAPSHOT.roundNumber,
+    modeId,
+    modeNumber: state.modeNumber ?? EMPTY_SNAPSHOT.modeNumber,
+    modeTitle: state.modeTitle ?? EMPTY_SNAPSHOT.modeTitle,
+    modeElapsedMs: state.modeElapsedMs ?? EMPTY_SNAPSHOT.modeElapsedMs,
     removedSpecies: state.removedSpecies ?? EMPTY_SNAPSHOT.removedSpecies,
     expectedRelations: state.expectedRelations ?? EMPTY_SNAPSHOT.expectedRelations,
     experiment,
@@ -66,6 +77,9 @@ function serializeState(state: any): GameSnapshot {
       timesEaten: player.timesEaten ?? 0,
       survivalMs: player.survivalMs ?? 0,
       livesEnded: player.livesEnded ?? 0,
+      populationCount: player.populationCount ?? 1,
+      lastFoodAt: player.lastFoodAt ?? 0,
+      respawnAt: player.respawnAt ?? 0,
     })),
     plants: collectionValues<PlantSnapshot>(state.plants, (plant, key) => ({
       id: plant.id || key,
@@ -74,6 +88,7 @@ function serializeState(state: any): GameSnapshot {
       y: plant.y,
       active: plant.active,
       respawnAt: plant.respawnAt,
+      populationCount: plant.populationCount ?? 1,
     })),
     animals: collectionValues<AnimalSnapshot>(state.animals, (animal, key) => ({
       id: animal.id || key,
@@ -82,6 +97,19 @@ function serializeState(state: any): GameSnapshot {
       y: animal.y,
       hunger: animal.hunger,
       meals: animal.meals,
+      status: animal.status ?? "active",
+      populationCount: animal.populationCount ?? 1,
+      respawnAt: animal.respawnAt ?? 0,
+      ghostUntil: animal.ghostUntil ?? 0,
+      lastFoodAt: animal.lastFoodAt ?? 0,
+      breedingEnabled: animal.breedingEnabled ?? true,
+      fixed: animal.fixed ?? false,
+      extinct: animal.extinct ?? false,
+    })),
+    populations: collectionValues<PopulationSnapshot>(state.populations, (population, key) => ({
+      species: population.species || key,
+      count: population.count ?? 0,
+      peak: population.peak ?? population.count ?? 0,
     })),
     observedRelations: collectionValues<RelationSnapshot>(state.observedRelations, (edge) => ({ prey: edge.prey, predator: edge.predator, count: edge.count })),
     blueRelations: collectionValues<RelationSnapshot>(state.blueRelations, (edge) => ({ prey: edge.prey, predator: edge.predator, count: edge.count })),
@@ -92,6 +120,7 @@ function serializeState(state: any): GameSnapshot {
       predatorSpecies: edge.predatorSpecies,
       count: edge.count,
     })),
+    modeResult,
   };
 }
 
@@ -117,6 +146,10 @@ function attachRoom(room: Room, role: "teacher" | "student"): void {
   room.onMessage("experiment_ready", (comparison: ExperimentComparison) => {
     const current = useGameStore.getState().snapshot;
     useGameStore.getState().setSnapshot({ ...current, experiment: comparison });
+  });
+  room.onMessage("mode_ready", (result: ModeResult) => {
+    const current = useGameStore.getState().snapshot;
+    useGameStore.getState().setSnapshot({ ...current, modeResult: result });
   });
   room.onMessage("class_result", (result: unknown) => {
     const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
@@ -173,18 +206,24 @@ export async function reconnectClass(): Promise<boolean> {
 export function eatNearest(): void {
   const { room, snapshot, selfId } = useGameStore.getState();
   const self = snapshot.players.find((player) => player.id === selfId);
-  if (!room || !self) return;
-  const pose = movementRenderPose(selfId) ?? self;
+  if (!room || !self || self.status !== "active") return;
+  // Interaction must use the reconciler's exact predicted pose, not the
+  // interpolated display pose used by Phaser rendering.
+  const pose = movementLogicPose(selfId) ?? self;
+  const configuredMode = isGameModeId(snapshot.modeId)
+    ? modeConfig(snapshot.modeId, isSpeciesId(snapshot.removedSpecies) ? snapshot.removedSpecies : undefined)
+    : null;
+  const activeSpecies = configuredMode ? new Set<string>(configuredMode.activeSpecies) : null;
   const candidates = [
-    ...snapshot.players.filter((player) => player.id !== selfId && player.status === "active"),
-    ...snapshot.plants.filter((plant) => plant.active),
-    ...snapshot.animals,
+    ...snapshot.players.filter((player) => player.id !== selfId && player.status === "active" && (!activeSpecies || activeSpecies.has(player.species))),
+    ...snapshot.plants.filter((plant) => plant.active && (!activeSpecies || activeSpecies.has(plant.species))),
+    ...snapshot.animals.filter((animal) => animal.status === "active" && !animal.extinct && (!activeSpecies || activeSpecies.has(animal.species))),
   ];
   const nearest = candidates
     .map((candidate) => ({ candidate, distance: Math.hypot(candidate.x - pose.x, candidate.y - pose.y) }))
     .filter(({ candidate, distance }) => distance <= EAT_RANGE && isWithinEatReach(pose, candidate))
-    .sort((a, b) => a.distance - b.distance)[0];
-  if (nearest) room.send("eat", { targetId: nearest.candidate.id, facingX: pose.facingX, facingY: pose.facingY });
+    .sort((a, b) => a.distance - b.distance);
+  if (nearest[0]) room.send("eat", { targetId: nearest[0].candidate.id, facingX: pose.facingX, facingY: pose.facingY });
 }
 
 export function useSkill(): void {
