@@ -39,6 +39,7 @@ import {
   snatchAnimationKey,
   snatchTextureKey,
   speciesSnatchDrop,
+  speciesSpriteScale,
   spriteDirection,
   spriteDirectionRow,
   speciesSpriteY,
@@ -334,7 +335,10 @@ export class GameTestScene extends Phaser.Scene {
     this.roleLabel.setText(`${species.name} · ${species.skill?.name ?? "스킬 없음"}`);
     const spriteSpeciesId = isSpriteSpecies(this.speciesId) ? this.speciesId : null;
     const spriteY = spriteSpeciesId ? speciesSpriteY(spriteSpeciesId, -22) : -22;
-    this.speciesSprite.setVisible(Boolean(spriteSpeciesId)).setScale(SPECIES_SPRITE_SCALE).setPosition(0, spriteY);
+    this.speciesSprite
+      .setVisible(Boolean(spriteSpeciesId))
+      .setScale(spriteSpeciesId ? speciesSpriteScale(spriteSpeciesId) : SPECIES_SPRITE_SCALE)
+      .setPosition(0, spriteY);
     this.atlasSprite.setVisible(!spriteSpeciesId).setPosition(0, -7);
     if (spriteSpeciesId && !this.speciesAction) {
       this.speciesSprite.setTexture(

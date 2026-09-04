@@ -17,7 +17,6 @@ import type { AnimalSnapshot, PlantSnapshot, PlayerSnapshot } from "../types";
 import {
   SPECIES_FRAME_HEIGHT,
   SPECIES_FRAME_WIDTH,
-  SPECIES_SPRITE_SCALE,
   SNATCH_DURATION_MS,
   SNATCH_FRAME_RATE,
   SPRITE_DIRECTIONS,
@@ -33,6 +32,7 @@ import {
   snatchAnimationKey,
   snatchTextureKey,
   speciesSnatchDrop,
+  speciesSpriteScale,
   spriteDirection,
   spriteDirectionRow,
   speciesSpriteY,
@@ -216,7 +216,7 @@ export class GameScene extends Phaser.Scene {
         const body = this.add.circle(0, 0, 29, species.color, 1).setStrokeStyle(player.id === selfId ? 6 : 3, player.id === selfId ? 0xfff07a : 0x173d2c);
         const emoji = this.add.image(0, -2, "species-atlas");
         this.setSpeciesSprite(emoji, player.species, 54);
-        const speciesSprite = this.add.sprite(0, -18, movementTextureKey("rabbit"), movementFrame(player.facingX, player.facingY)).setScale(SPECIES_SPRITE_SCALE).setVisible(false);
+        const speciesSprite = this.add.sprite(0, -18, movementTextureKey("rabbit"), movementFrame(player.facingX, player.facingY)).setScale(speciesSpriteScale("rabbit")).setVisible(false);
         const label = this.add.text(0, 42, player.name, {
           fontFamily: "Arial, sans-serif",
           fontStyle: "bold",
@@ -450,6 +450,7 @@ export class GameScene extends Phaser.Scene {
     visual.emoji.setVisible(!spriteSpecies);
     visual.speciesSprite.setVisible(spriteSpecies);
     if (spriteSpecies) {
+      visual.speciesSprite.setScale(speciesSpriteScale(speciesId));
       if (!visual.speciesAction) {
         const flying = isFlyingSpriteSpecies(speciesId);
         const phase = moving || flying ? Math.floor(this.time.now / 110) % 4 : 0;
