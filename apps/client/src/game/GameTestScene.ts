@@ -11,6 +11,7 @@ import {
   WORLD_OBSTACLES,
   WORLD_WIDTH,
   canEat,
+  canSeeThroughCover,
   isPlayableSpeciesId,
   isGameModeId,
   isSpeciesId,
@@ -45,6 +46,17 @@ import {
   speciesSpriteY,
   speciesSpriteConfig,
 } from "./speciesAnimations";
+import {
+  PLANT_FRAME_HEIGHT,
+  PLANT_FRAME_WIDTH,
+  PLANT_SPECIES,
+  createPlantVisual,
+  isPlantSpriteSpecies,
+  plantSpriteConfig,
+  plantTextureKey,
+} from "./plantSprites";
+import { createWorldTileBackground, preloadWorldTiles } from "./worldBackground";
+import { createWorldBushes, preloadWorldBush, updateWorldBushes, type WorldBushVisualMap } from "./worldCover";
 
 interface TestTarget {
   id: string;
@@ -91,9 +103,7 @@ export class GameTestScene extends Phaser.Scene {
   private player?: Phaser.GameObjects.Container;
   private atlasSprite?: Phaser.GameObjects.Image;
   private speciesSprite?: Phaser.GameObjects.Sprite;
-  private playerBody?: Phaser.GameObjects.Arc;
-  private playerRing?: Phaser.GameObjects.Arc;
-  private roleLabel?: Phaser.GameObjects.Text;
+  private populationLabel?: Phaser.GameObjects.Text;
   private stateLabel?: Phaser.GameObjects.Text;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd?: Record<string, Phaser.Input.Keyboard.Key>;
@@ -105,8 +115,8 @@ export class GameTestScene extends Phaser.Scene {
   private lastStatusAt = -Infinity;
   private hopPhase = 0;
   private targets: TestTarget[] = [];
+  private bushes: WorldBushVisualMap = new Map();
   private targetRing?: Phaser.GameObjects.Arc;
-  private targetHint?: Phaser.GameObjects.Text;
   private eatReadyAt = 0;
   private wrongUntil = 0;
   private hunger = 100;
@@ -128,6 +138,8 @@ export class GameTestScene extends Phaser.Scene {
 
   preload(): void {
     this.load.image("test-species-atlas", "/assets/pixel/species-atlas.png");
+    preloadWorldTiles(this, "test-");
+    preloadWorldBush(this, "test-");
     SPRITE_SPECIES.forEach((speciesId) => {
       const config = speciesSpriteConfig(speciesId);
       this.load.spritesheet(movementTextureKey(speciesId, "test-"), `/assets/pixel/animals/${config.movementFile}`, {
@@ -147,6 +159,13 @@ export class GameTestScene extends Phaser.Scene {
         });
       }
     });
+    PLANT_SPECIES.forEach((speciesId) => {
+      const config = plantSpriteConfig(speciesId);
+      this.load.spritesheet(plantTextureKey(speciesId, "test-"), `/assets/pixel/plants/${config.file}`, {
+        frameWidth: PLANT_FRAME_WIDTH,
+        frameHeight: PLANT_FRAME_HEIGHT,
+      });
+    });
   }
 
   create(): void {
@@ -157,9 +176,6 @@ export class GameTestScene extends Phaser.Scene {
     this.createTargets();
     this.createPlayer();
     this.targetRing = this.add.circle(0, 0, 38, 0xffdc67, 0.08).setStrokeStyle(4, 0xffdc67, 0.95).setDepth(18).setVisible(false);
-    this.targetHint = this.add.text(0, -51, "먹기 대상", {
-      fontFamily: "Arial, sans-serif", fontStyle: "bold", fontSize: "12px", color: "#fff7c2", backgroundColor: "#173d2cdd", padding: { x: 6, y: 3 },
-    }).setOrigin(0.5).setDepth(19).setVisible(false);
     this.cursors = this.input.keyboard?.createCursorKeys();
     this.wasd = this.input.keyboard?.addKeys("W,A,S,D") as Record<string, Phaser.Input.Keyboard.Key> | undefined;
     this.skillKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -199,6 +215,8 @@ export class GameTestScene extends Phaser.Scene {
 
     this.updateVisual(time, moving, skillActive);
     this.hunger = Math.max(0, this.hunger - delta * 0.0007);
+    updateWorldBushes(this.bushes, this.player.x, this.player.y);
+    this.updateTargetVisibility();
     this.updateEatTarget();
     this.emitStatus(time);
   }
@@ -306,33 +324,28 @@ export class GameTestScene extends Phaser.Scene {
 
   private createPlayer(): void {
     const shadow = this.add.ellipse(0, 22, 58, 25, 0x153e2e, 0.38);
-    this.playerRing = this.add.circle(0, 0, 36, 0xffffff, 0.05).setStrokeStyle(4, 0xffed80, 1);
-    this.playerBody = this.add.circle(0, -3, 31, SPECIES[this.speciesId].color, 0.98).setStrokeStyle(4, 0x123629);
     this.atlasSprite = this.add.image(0, -7, "test-species-atlas");
     this.speciesSprite = this.add.sprite(0, -18, movementTextureKey("rabbit", "test-"), 0).setVisible(false);
-    this.roleLabel = this.add.text(0, 45, "", {
-      fontFamily: "Jua, sans-serif",
-      fontSize: "17px",
-      color: "#fff8d8",
-      backgroundColor: "#12382ddd",
-      padding: { x: 8, y: 4 },
+    this.populationLabel = this.add.text(0, -52, "X1", {
+      fontFamily: "Mona12, sans-serif",
+      fontSize: "12px",
+      color: "#fff2a4",
+      backgroundColor: "#173d2de8",
+      padding: { x: 5, y: 2 },
     }).setOrigin(0.5);
-    this.stateLabel = this.add.text(0, -61, "", {
-      fontFamily: "Jua, sans-serif",
-      fontSize: "14px",
+    this.stateLabel = this.add.text(0, -72, "", {
+      fontFamily: "Mona12, sans-serif",
+      fontSize: "10px",
       color: "#fff6a9",
       stroke: "#17382d",
-      strokeThickness: 5,
+      strokeThickness: 3,
     }).setOrigin(0.5);
-    this.player = this.add.container(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, [shadow, this.playerRing, this.playerBody, this.atlasSprite, this.speciesSprite, this.roleLabel, this.stateLabel]).setDepth(30);
+    this.player = this.add.container(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, [shadow, this.atlasSprite, this.speciesSprite, this.populationLabel, this.stateLabel]).setDepth(30);
     this.updateRoleVisual();
   }
 
   private updateRoleVisual(): void {
-    if (!this.atlasSprite || !this.speciesSprite || !this.playerBody || !this.roleLabel) return;
-    const species = SPECIES[this.speciesId];
-    this.playerBody.setFillStyle(species.color);
-    this.roleLabel.setText(`${species.name} · ${species.skill?.name ?? "스킬 없음"}`);
+    if (!this.atlasSprite || !this.speciesSprite) return;
     const spriteSpeciesId = isSpriteSpecies(this.speciesId) ? this.speciesId : null;
     const spriteY = spriteSpeciesId ? speciesSpriteY(spriteSpeciesId, -22) : -22;
     this.speciesSprite
@@ -350,7 +363,7 @@ export class GameTestScene extends Phaser.Scene {
   }
 
   private updateVisual(time: number, moving: boolean, skillActive: boolean): void {
-    if (!this.player || !this.playerRing || !this.playerBody || !this.atlasSprite || !this.speciesSprite || !this.stateLabel) return;
+    if (!this.player || !this.atlasSprite || !this.speciesSprite || !this.populationLabel || !this.stateLabel) return;
     const skill = SPECIES[this.speciesId].skill;
     const flying = isFlyingSpriteSpecies(this.speciesId);
     const phase = flying ? Math.floor(this.time.now / 110) % 4 : moving ? Math.floor(this.hopPhase) % 4 : 0;
@@ -363,10 +376,9 @@ export class GameTestScene extends Phaser.Scene {
       );
     }
     this.atlasSprite.setY(-7 + (moving ? Math.sin(this.hopPhase * Math.PI / 2) * 3 : 0));
-    this.playerRing.setStrokeStyle(skillActive ? 7 : 4, skill?.kind === "shield" && skillActive ? 0x8edcff : 0xffed80, skillActive ? 1 : 0.85);
     const stealth = skillActive && skill?.kind === "stealth";
     this.player.setAlpha(stealth ? 0.32 : 1);
-    this.playerBody.setScale(skillActive && skill?.kind === "shield" ? 1.25 : 1);
+    this.populationLabel.setText(`X${this.populationCount}`);
     const remaining = Math.max(0, this.skillReadyAt - time);
     this.stateLabel.setText(skillActive ? `${skill?.name} 발동!` : remaining > 0 ? `${Math.ceil(remaining / 1000)}초` : "");
   }
@@ -475,34 +487,13 @@ export class GameTestScene extends Phaser.Scene {
 
   private createTarget(id: string, speciesId: SpeciesId, x: number, y: number): TestTarget {
     let visual: Phaser.GameObjects.Container;
-    if (speciesId === "grass" || speciesId === "berry" || speciesId === "acorn" || speciesId === "clover") {
-      const sprite = this.add.graphics();
-      sprite.fillStyle(0x295f36, 0.45).fillRect(-18, 15, 38, 9);
-      if (speciesId === "berry") {
-        sprite.fillStyle(0x503724).fillRect(-4, -2, 9, 25);
-        sprite.fillStyle(0x1f5933).fillRect(-17, -22, 36, 27);
-        sprite.fillStyle(0x3f8445).fillRect(-12, -28, 25, 20);
-        sprite.fillStyle(0xd65a4f).fillRect(-10, -17, 5, 5).fillRect(7, -12, 5, 5).fillRect(-1, -25, 5, 5);
-      } else if (speciesId === "acorn") {
-        sprite.fillStyle(0x674125).fillRect(-5, -10, 10, 27);
-        sprite.fillStyle(0xb77942).fillRect(-14, -20, 28, 16);
-        sprite.fillStyle(0x8e5b31).fillRect(-10, -24, 20, 6);
-      } else if (speciesId === "clover") {
-        sprite.fillStyle(0x2e733c).fillRect(-3, -1, 6, 28);
-        sprite.fillStyle(0x74c947).fillRect(-17, -17, 13, 13).fillRect(4, -17, 13, 13).fillRect(-7, -29, 14, 13);
-        sprite.fillStyle(0xa6e36a).fillRect(-12, -13, 5, 5).fillRect(8, -13, 5, 5).fillRect(-3, -25, 5, 5);
-      } else {
-        sprite.fillStyle(0x2e733c).fillRect(-14, -7, 7, 26).fillRect(-3, -18, 7, 38).fillRect(8, -10, 7, 29);
-        sprite.fillStyle(0x79ad4f).fillRect(-11, -3, 5, 14).fillRect(0, -14, 5, 18).fillRect(11, -6, 5, 16);
-      }
-      visual = this.add.container(x, y, [sprite]).setDepth(5);
+    if (isPlantSpriteSpecies(speciesId)) {
+      visual = createPlantVisual(this, speciesId, x, y, "test-");
     } else {
-      const species = SPECIES[speciesId];
-      const body = this.add.circle(0, 0, 23, species.color, 0.9).setStrokeStyle(3, 0xfff4b0);
       const image = this.add.image(0, -1, "test-species-atlas");
       this.setAtlasSpecies(image, speciesId, 44);
-      const label = this.add.text(0, 34, "새끼", { fontSize: "11px", fontStyle: "bold", color: "#fff", backgroundColor: "#274f3dcc", padding: { x: 5, y: 2 } }).setOrigin(0.5);
-      visual = this.add.container(x, y, [body, image, label]).setDepth(8);
+      const population = this.add.text(0, -31, "X1", { fontFamily: "Mona12, sans-serif", fontSize: "9px", color: "#fff2a4", backgroundColor: "#173d2de8", padding: { x: 3, y: 2 } }).setOrigin(0.5);
+      visual = this.add.container(x, y, [image, population]).setDepth(8);
     }
     return { id, speciesId, x, y, active: true, visual };
   }
@@ -513,18 +504,25 @@ export class GameTestScene extends Phaser.Scene {
     const config = modeConfig(this.modeId, this.removedSpecies);
     return this.targets
       .filter((target) => target.active && config.activeSpecies.includes(target.speciesId) && Math.hypot(target.x - this.player!.x, target.y - this.player!.y) <= EAT_RANGE && isWithinEatReach(facingPoint, target))
+      .filter((target) => isPlantSpriteSpecies(target.speciesId) || canSeeThroughCover(this.player!.x, this.player!.y, target.x, target.y))
       .sort((a, b) => Math.hypot(a.x - this.player!.x, a.y - this.player!.y) - Math.hypot(b.x - this.player!.x, b.y - this.player!.y))[0];
+  }
+
+  private updateTargetVisibility(): void {
+    if (!this.player) return;
+    this.targets.forEach((target) => {
+      const visible = isPlantSpriteSpecies(target.speciesId) || canSeeThroughCover(this.player!.x, this.player!.y, target.x, target.y);
+      target.visual.setVisible(target.active && visible);
+    });
   }
 
   private updateEatTarget(): void {
     const target = this.nearestTarget();
     if (!target) {
       this.targetRing?.setVisible(false);
-      this.targetHint?.setVisible(false);
       return;
     }
     this.targetRing?.setPosition(target.x, target.y).setVisible(true);
-    this.targetHint?.setPosition(target.x, target.y - 51).setVisible(true);
   }
 
   private setAtlasSpecies(image: Phaser.GameObjects.Image, speciesId: string, size: number): void {
@@ -541,20 +539,8 @@ export class GameTestScene extends Phaser.Scene {
   }
 
   private drawWorld(): void {
-    const ground = this.add.graphics();
-    ground.fillStyle(0x639f47).fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    for (let x = 0; x < WORLD_WIDTH; x += 64) {
-      for (let y = 0; y < WORLD_HEIGHT; y += 64) {
-        if ((x / 64 + y / 64) % 3 === 0) ground.fillStyle(0x6aa64b, 0.48).fillRect(x, y, 64, 64);
-        const seed = ((x * 17 + y * 31) >>> 3) % 43;
-        if (seed % 4 === 0) ground.fillStyle(0x4f893b, 0.72).fillRect(x + 12 + seed, y + 18, 5, 9);
-        if (seed % 7 === 0) ground.fillStyle(0x8cbd55, 0.85).fillRect(x + 38, y + 43, 7, 5);
-      }
-    }
-    ground.fillStyle(0x9d8b52).fillRect(WORLD_WIDTH * 0.44 - 12, 0, WORLD_WIDTH * 0.12 + 24, WORLD_HEIGHT);
-    ground.fillStyle(0xc1aa66).fillRect(WORLD_WIDTH * 0.44, 0, WORLD_WIDTH * 0.12, WORLD_HEIGHT);
-    ground.fillStyle(0x9d8b52).fillRect(0, WORLD_HEIGHT * 0.44 - 12, WORLD_WIDTH, WORLD_HEIGHT * 0.12 + 24);
-    ground.fillStyle(0xc1aa66).fillRect(0, WORLD_HEIGHT * 0.44, WORLD_WIDTH, WORLD_HEIGHT * 0.12);
+    createWorldTileBackground(this, "test-");
+    const ground = this.add.graphics().setDepth(5);
 
     WORLD_OBSTACLES.forEach((rect, index) => {
       ground.fillStyle(0x183f2c).fillRect(rect.x - 8, rect.y + 10, rect.width + 16, rect.height + 10);
@@ -565,29 +551,29 @@ export class GameTestScene extends Phaser.Scene {
       for (let i = 0; i < treeCount; i += 1) this.drawTree(rect.x + 24 + i * 48, rect.y + 22 + (i % 2) * 38);
     });
 
+    this.bushes = createWorldBushes(this, "test-");
+
     const landmarks = [
-      [470, 170, "🌲 솔바람 숲"],
-      [3820, 170, "🌼 들꽃 언덕"],
-      [420, 2740, "🪨 바위 골짜기"],
-      [3820, 2740, "💧 물빛 쉼터"],
-      [2190, 1370, "🧭 만남의 광장"],
+      [470, 170, "솔바람 숲"],
+      [3820, 170, "들꽃 언덕"],
+      [420, 2740, "바위 골짜기"],
+      [3820, 2740, "물빛 쉼터"],
+      [2190, 1370, "만남의 광장"],
     ] as const;
-    landmarks.forEach(([x, y, label]) => this.add.text(x, y, label, { fontFamily: "Arial Rounded MT Bold, sans-serif", fontSize: "28px", color: "#fffbe8", stroke: "#295b3b", strokeThickness: 7 }).setDepth(2));
+    landmarks.forEach(([x, y, label]) => this.add.text(x, y, label, { fontFamily: "Mona12, sans-serif", fontSize: "28px", color: "#fffbe8", stroke: "#295b3b", strokeThickness: 7 }).setDepth(7));
   }
 
   private drawTree(x: number, y: number): void {
-    const tree = this.add.graphics().setPosition(x, y).setDepth(5);
+    const tree = this.add.graphics().setPosition(x, y).setDepth(6);
     tree.fillStyle(0x503724).fillRect(-5, 20, 11, 18);
     tree.fillStyle(0x173f2a).fillRect(-22, -2, 44, 30);
     tree.fillStyle(0x3b7a43).fillRect(-16, -16, 33, 31);
     tree.fillStyle(0x77a94e).fillRect(-8, -13, 9, 8);
   }
 
-  private burst(color: number, copy: string): void {
+  private burst(_color: number, copy: string): void {
     if (!this.player) return;
-    const ring = this.add.circle(this.player.x, this.player.y, 34, color, 0.12).setStrokeStyle(6, color, 0.95).setDepth(45);
-    const text = this.add.text(this.player.x, this.player.y - 68, copy, { fontFamily: "Jua, sans-serif", fontSize: "22px", color: "#fff8c7", stroke: "#17382d", strokeThickness: 6 }).setOrigin(0.5).setDepth(46);
-    this.tweens.add({ targets: ring, scale: 2.4, alpha: 0, duration: 520, ease: "Cubic.easeOut", onComplete: () => ring.destroy() });
+    const text = this.add.text(this.player.x, this.player.y - 68, copy, { fontFamily: "Mona12, sans-serif", fontSize: "22px", color: "#fff8c7", stroke: "#17382d", strokeThickness: 6 }).setOrigin(0.5).setDepth(46);
     this.tweens.add({ targets: text, y: text.y - 45, alpha: 0, duration: 760, ease: "Cubic.easeOut", onComplete: () => text.destroy() });
   }
 

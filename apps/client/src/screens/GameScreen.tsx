@@ -8,8 +8,7 @@ export function GameScreen(): JSX.Element {
     <main className="game-screen">
       <GameCanvas />
       {role === "student" && <GameHud />}
-      {role === "teacher" && <div className="spectator-label">🦉 교사 전체 관찰 화면</div>}
+      {role === "teacher" && <div className="spectator-label">교사 전체 관찰 화면</div>}
     </main>
   );
 }
-

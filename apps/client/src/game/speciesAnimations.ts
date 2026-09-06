@@ -1,6 +1,8 @@
-export const SPECIES_FRAME_WIDTH = 304;
-export const SPECIES_FRAME_HEIGHT = 352;
-export const SPECIES_SPRITE_SCALE = 0.27;
+// Source sheets are stored at 50% resolution; the runtime scale keeps the
+// on-screen size aligned with the original 304x352 frame assets.
+export const SPECIES_FRAME_WIDTH = 152;
+export const SPECIES_FRAME_HEIGHT = 176;
+export const SPECIES_SPRITE_SCALE = 0.54;
 export const SNATCH_DURATION_MS = 320;
 export const SNATCH_FRAME_RATE = 16;
 
@@ -37,7 +39,7 @@ const SPECIES_SPRITES: Record<SpriteSpeciesId, SpeciesSpriteConfig> = {
     movementTexture: "caterpillar-walk",
     sickFile: "caterpillar-sick.png",
     sickTexture: "caterpillar-sick",
-    scale: 0.23,
+    scale: 0.46,
     yOffset: 6,
   },
   frog: {
@@ -45,7 +47,7 @@ const SPECIES_SPRITES: Record<SpriteSpeciesId, SpeciesSpriteConfig> = {
     movementTexture: "frog-walk",
     sickFile: "frog-sick.png",
     sickTexture: "frog-sick",
-    scale: 0.22,
+    scale: 0.44,
     yOffset: 7,
   },
   rabbit: {
@@ -91,7 +93,7 @@ const SPECIES_SPRITES: Record<SpriteSpeciesId, SpeciesSpriteConfig> = {
     movementTexture: "duck-walk",
     sickFile: "duck-sick.png",
     sickTexture: "duck-sick",
-    scale: 0.20,
+    scale: 0.40,
     yOffset: 10,
   },
   hawk: {

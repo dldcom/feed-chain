@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GAME_MODE_IDS, GAME_PHASES, PHASE_LABELS, PLAYABLE_SPECIES, SPECIES, isPlayableSpeciesId, modeConfig, type GameModeId, type SpeciesId } from "@feed-chain/shared";
 import { downloadClassResult, leaveClass, sendTeacherCommand } from "../network/gameClient";
 import { useGameStore } from "../store/gameStore";
+import { PixelSpeciesIcon } from "../components/PixelSpeciesIcon";
 
 export function TeacherPanel(): JSX.Element {
   const snapshot = useGameStore((state) => state.snapshot);
@@ -22,7 +23,7 @@ export function TeacherPanel(): JSX.Element {
     <aside className="teacher-console">
       <div className="teacher-console-header">
         <div><small>수업 코드</small><strong>{snapshot.roomCode}</strong></div>
-        <span className="connection-pill">● {connected}/23</span>
+        <span className="connection-pill">{connected}/23 연결</span>
       </div>
       <div className="phase-track">
         {GAME_PHASES.map((phase) => <i key={phase} className={phase === snapshot.phase ? "active" : ""} title={PHASE_LABELS[phase]} />)}
@@ -33,7 +34,7 @@ export function TeacherPanel(): JSX.Element {
         <div className="player-roster">
           {snapshot.players.length ? snapshot.players.map((player) => (
             <button key={player.id} className={`${player.connected ? "" : "offline"} ${selectedPlayerId === player.id ? "selected" : ""}`} onClick={() => setSelectedPlayerId(player.id)}>
-              <span>{isPlayableSpeciesId(player.species) ? SPECIES[player.species].emoji : "❔"}</span>{player.name}
+              <span>{isPlayableSpeciesId(player.species) ? <PixelSpeciesIcon speciesId={player.species} /> : null}</span>{player.name}
             </button>
           )) : <p>학생들이 코드를 입력하면 이곳에 나타납니다.</p>}
         </div>
@@ -43,7 +44,7 @@ export function TeacherPanel(): JSX.Element {
         <div className="manual-role-picker">
           <small>{selectedPlayer.name} 역할 직접 선택</small>
           <div>{PLAYABLE_SPECIES.map((species) => (
-            <button key={species.id} className={selectedPlayer.species === species.id ? "active" : ""} onClick={() => sendTeacherCommand({ action: "set_role", playerId: selectedPlayer.id, species: species.id })}>{species.emoji}</button>
+            <button key={species.id} className={selectedPlayer.species === species.id ? "active" : ""} onClick={() => sendTeacherCommand({ action: "set_role", playerId: selectedPlayer.id, species: species.id })}><PixelSpeciesIcon speciesId={species.id} /></button>
           ))}</div>
         </div>
       )}
@@ -52,7 +53,7 @@ export function TeacherPanel(): JSX.Element {
         <div className="species-picker">
           <small>사라질 생물을 선택하세요</small>
           <div>{PLAYABLE_SPECIES.map((species) => (
-            <button key={species.id} onClick={() => sendTeacherCommand({ action: "start_experiment", removedSpecies: species.id })}>{species.emoji}<span>{species.name}</span></button>
+            <button key={species.id} onClick={() => sendTeacherCommand({ action: "start_experiment", removedSpecies: species.id })}><PixelSpeciesIcon speciesId={species.id} /><span>{species.name}</span></button>
           ))}</div>
         </div>
       )}
@@ -85,7 +86,7 @@ export function TeacherPanel(): JSX.Element {
               <div>
                 {modeConfig("web_removal").activeSpecies.map((speciesId) => (
                   <button key={speciesId} className={removedModeSpecies === speciesId ? "active" : ""} onClick={() => setRemovedModeSpecies(speciesId)}>
-                    {SPECIES[speciesId].emoji} {SPECIES[speciesId].name}
+                    <PixelSpeciesIcon speciesId={speciesId} /> {SPECIES[speciesId].name}
                   </button>
                 ))}
               </div>
@@ -109,24 +110,24 @@ export function TeacherPanel(): JSX.Element {
       )}
 
       <div className="teacher-actions">
-        {canAssign && <button className="teacher-primary" disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "assign_roles" })}>🎲 자동 배정하고 공개</button>}
-        {canAssign && <button disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "reveal_roles" })}>👀 현재 역할로 공개</button>}
-        {snapshot.phase === "role_reveal" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "round_1" })}>▶ 기존 1판 시작</button>}
+        {canAssign && <button className="teacher-primary" disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "assign_roles" })}>자동 배정하고 공개</button>}
+        {canAssign && <button disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "reveal_roles" })}>현재 역할로 공개</button>}
+        {snapshot.phase === "role_reveal" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "round_1" })}>기존 1판 시작</button>}
         {snapshot.phase === "role_reveal" && <button onClick={() => sendTeacherCommand({ action: "next_phase", phase: "mode_setup" })}>새 게임 모드 선택</button>}
-        {snapshot.phase === "web_review_1" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "round_2" })}>▶ 2판 시작</button>}
-        {snapshot.phase === "web_review_2" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "experiment_setup" })}>🧪 생태계 실험</button>}
-        {snapshot.phase === "experiment_b" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "final_results" })}>📊 결과 비교</button>}
+        {snapshot.phase === "web_review_1" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "round_2" })}>2판 시작</button>}
+        {snapshot.phase === "web_review_2" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "experiment_setup" })}>생태계 실험</button>}
+        {snapshot.phase === "experiment_b" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "final_results" })}>결과 비교</button>}
         {(snapshot.phase === "mode_play" || snapshot.phase === "round_1" || snapshot.phase === "round_2" || snapshot.phase === "experiment_a") && (
           <>
             <div className="time-adjust"><button onClick={() => sendTeacherCommand({ action: "adjust_time", deltaMs: -30000 })}>−30초</button><button onClick={() => sendTeacherCommand({ action: "adjust_time", deltaMs: 30000 })}>+30초</button></div>
-            <button onClick={() => sendTeacherCommand({ action: snapshot.paused ? "resume" : "pause" })}>{snapshot.paused ? "▶ 계속" : "⏸ 잠시 멈춤"}</button>
+            <button onClick={() => sendTeacherCommand({ action: snapshot.paused ? "resume" : "pause" })}>{snapshot.paused ? "계속" : "잠시 멈춤"}</button>
             <button onClick={() => sendTeacherCommand({
               action: "next_phase",
               phase: snapshot.phase === "mode_play" ? "mode_result" : snapshot.phase === "round_1" ? "web_review_1" : snapshot.phase === "round_2" ? "web_review_2" : "experiment_b",
-            })}>⏭ 현재 활동 마치기</button>
+            })}>현재 활동 마치기</button>
           </>
         )}
-        <button onClick={downloadClassResult}>💾 기록 저장</button>
+        <button onClick={downloadClassResult}>기록 저장</button>
         <button className="quiet-button" onClick={() => void leaveClass()}>나가기</button>
       </div>
     </aside>

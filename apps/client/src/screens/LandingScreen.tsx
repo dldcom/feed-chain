@@ -61,8 +61,8 @@ export function LandingScreen(): JSX.Element {
               void run(() => mode === "teacher" ? createClass(nickname) : joinClass(roomCode, nickname));
             }}
           >
-            <button type="button" className="back-button" onClick={() => setMode("home")}>←</button>
-            <span className="dialog-icon">{mode === "teacher" ? "🦉" : "🧭"}</span>
+            <button type="button" className="back-button" onClick={() => setMode("home")}>뒤로</button>
+            <span className="dialog-icon"><PixelSpeciesIcon speciesId={mode === "teacher" ? "hawk" : "rabbit"} /></span>
             <h2>{mode === "teacher" ? "새 생태계 만들기" : "탐험대에 합류하기"}</h2>
             {mode === "student" && (
               <label>
@@ -80,7 +80,7 @@ export function LandingScreen(): JSX.Element {
               <span>{mode === "teacher" ? "선생님 이름" : "탐험가 이름"}</span>
               <input value={nickname} onChange={(event) => setNickname(event.target.value.slice(0, 12))} placeholder={mode === "teacher" ? "김선생" : "민준"} autoComplete="off" />
             </label>
-            {error && <div className="dialog-error">⚠️ {error}</div>}
+            {error && <div className="dialog-error">{error}</div>}
             <button className="primary-game-button" disabled={connecting}>
               {connecting ? "생태계로 이동 중…" : mode === "teacher" ? "수업 열기" : "입장하기"}
             </button>

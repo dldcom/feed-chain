@@ -53,8 +53,10 @@ export function GameTestScreen(): JSX.Element {
     active: status.status === "active",
     populationCount: status.populationCount,
     status: status.status,
+    modeId,
     modeNumber: status.modeNumber,
     modeTitle: status.modeTitle,
+    removedSpecies: modeId === "web_removal" ? removedSpecies : undefined,
     wrongRemainingMs: status.wrongRemainingMs,
     paused: false,
     onInput: (x, y) => sceneRef.current?.setVirtualInput(x, y),
@@ -90,7 +92,7 @@ export function GameTestScreen(): JSX.Element {
             const mode = modeConfig(id);
             return <button key={id} className={id === modeId ? "selected" : ""} onClick={() => setModeId(id)}><b>{mode.number}</b><span>{mode.title}</span></button>;
           })}
-          {modeId === "web_removal" && <div className="game-test-removal-picker"><small>사라질 종</small><div>{modeConfig("web_removal").activeSpecies.map((id) => <button key={id} className={removedSpecies === id ? "selected" : ""} onClick={() => setRemovedSpecies(id)}>{SPECIES[id].emoji}</button>)}</div></div>}
+          {modeId === "web_removal" && <div className="game-test-removal-picker"><small>사라질 종</small><div>{modeConfig("web_removal").activeSpecies.map((id) => <button key={id} className={removedSpecies === id ? "selected" : ""} onClick={() => setRemovedSpecies(id)}><PixelSpeciesIcon speciesId={id} /></button>)}</div></div>}
         </div>
         <div className="game-test-help">
           <strong>조작법</strong>
@@ -101,9 +103,9 @@ export function GameTestScreen(): JSX.Element {
         <div className="game-test-role-summary">
           <span>현재 위치 {status.position.x}, {status.position.y}</span>
           <span>먹이 발견 {status.discovered}/{status.totalRelations}</span>
-          <button onClick={() => sceneRef.current?.resetCooldown()}>↻ 스킬 쿨다운 초기화</button>
+          <button onClick={() => sceneRef.current?.resetCooldown()}>스킬 쿨다운 초기화</button>
         </div>
-        <a className="game-test-exit" href="/">← 메인으로 돌아가기</a>
+        <a className="game-test-exit" href="/">메인으로 돌아가기</a>
       </aside>
     </main>
   );

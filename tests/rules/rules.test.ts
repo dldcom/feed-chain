@@ -7,9 +7,12 @@ import {
   SPAWN_POINTS,
   SPECIES,
   WORLD_HEIGHT,
+  WORLD_COVER_ZONES,
   WORLD_WIDTH,
   applyMovement,
   canEat,
+  canSeeThroughCover,
+  coverIdAt,
   isWithinEatReach,
   isWithinEatServerReach,
   modeConfig,
@@ -113,5 +116,15 @@ describe("생태계 비교 시뮬레이션", () => {
 
     expect(result.timeline.every((point) => point.populations.frog === 0)).toBe(true);
     expect(result.timeline).toHaveLength(9);
+  });
+});
+describe("bush cover rules", () => {
+  it("shares a cover id inside one cluster and hides across clusters", () => {
+    expect(WORLD_COVER_ZONES).toHaveLength(8);
+    expect(coverIdAt(700, 450)).toBe("bush-northwest");
+    expect(coverIdAt(2400, 1500)).toBeNull();
+    expect(canSeeThroughCover(700, 450, 760, 480)).toBe(true);
+    expect(canSeeThroughCover(2400, 1500, 700, 450)).toBe(false);
+    expect(canSeeThroughCover(700, 450, 2400, 1500)).toBe(true);
   });
 });

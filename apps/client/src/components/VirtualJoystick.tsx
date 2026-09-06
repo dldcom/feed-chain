@@ -24,6 +24,7 @@ export function VirtualJoystick({ onInput }: { onInput?: (x: number, y: number) 
   };
 
   const stop = (): void => {
+    if (pointerId.current === null) return;
     pointerId.current = null;
     setKnob({ x: 0, y: 0 });
     applyInput(0, 0);
@@ -34,6 +35,7 @@ export function VirtualJoystick({ onInput }: { onInput?: (x: number, y: number) 
       ref={baseRef}
       className="joystick"
       onPointerDown={(event) => {
+        if (pointerId.current !== null) return;
         pointerId.current = event.pointerId;
         event.currentTarget.setPointerCapture(event.pointerId);
         update(event.clientX, event.clientY);
@@ -41,8 +43,9 @@ export function VirtualJoystick({ onInput }: { onInput?: (x: number, y: number) 
       onPointerMove={(event) => {
         if (pointerId.current === event.pointerId) update(event.clientX, event.clientY);
       }}
-      onPointerUp={stop}
-      onPointerCancel={stop}
+      onPointerUp={(event) => { if (pointerId.current === event.pointerId) stop(); }}
+      onPointerCancel={(event) => { if (pointerId.current === event.pointerId) stop(); }}
+      onLostPointerCapture={(event) => { if (pointerId.current === event.pointerId) stop(); }}
       aria-label="이동 조이스틱"
     >
       <div className="joystick-ring" />

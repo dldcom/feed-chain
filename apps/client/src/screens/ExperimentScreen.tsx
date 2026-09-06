@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SPECIES, isGameModeId, isSpeciesId, modeConfig, type ModeResult, type PlayableSpeciesId, type SimulationResult, type SpeciesId } from "@feed-chain/shared";
 import { useGameStore } from "../store/gameStore";
+import { PixelSpeciesIcon } from "../components/PixelSpeciesIcon";
 import { IntermissionScreen } from "./IntermissionScreen";
 
 function PopulationBoard({ result, tick, label, color }: { result: SimulationResult; tick: number; label: string; color: string }): JSX.Element {
@@ -12,7 +13,7 @@ function PopulationBoard({ result, tick, label, color }: { result: SimulationRes
       <div className="population-grid">
         {ids.map((id) => {
           const count = point?.populations[id] ?? 0;
-          return <div key={id} className={count === 0 ? "extinct" : ""}><span>{SPECIES[id].emoji}</span><small>{SPECIES[id].name}</small><strong>{count}</strong></div>;
+          return <div key={id} className={count === 0 ? "extinct" : ""}><span><PixelSpeciesIcon speciesId={id} /></span><small>{SPECIES[id].name}</small><strong>{count}</strong></div>;
         })}
       </div>
     </section>
@@ -26,7 +27,7 @@ function TrendChart({ result, color }: { result: SimulationResult; color: string
   const max = Math.max(1, ...result.timeline.flatMap((point) => speciesIds.map((id) => point.populations[id] ?? 0)));
   return (
     <div className="trend-wrap">
-      <div className="trend-legend">{speciesIds.map((id) => <span key={id}><i style={{ background: SPECIES[id].cssColor || color }} />{SPECIES[id].emoji} {SPECIES[id].name}</span>)}</div>
+      <div className="trend-legend">{speciesIds.map((id) => <span key={id}><i style={{ background: SPECIES[id].cssColor || color }} /><PixelSpeciesIcon speciesId={id} /> {SPECIES[id].name}</span>)}</div>
       <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`}>
         {[0, 1, 2, 3, 4].map((line) => <line key={line} x1="30" x2={width - 10} y1={20 + line * 42} y2={20 + line * 42} stroke="#ffffff22" />)}
         {speciesIds.map((id) => {
@@ -50,11 +51,12 @@ export function ExperimentPlaybackScreen(): JSX.Element {
     return () => window.clearInterval(timer);
   }, [comparison]);
 
-  if (!comparison) return <IntermissionScreen icon="🧪" title="비교 실험을 준비하고 있어요" copy="잠시만 기다려 주세요." />;
-  const species = isSpeciesId(removed) ? SPECIES[removed] : SPECIES.frog;
+  if (!comparison) return <IntermissionScreen title="비교 실험을 준비하고 있어요" copy="잠시만 기다려 주세요." />;
+  const removedSpeciesId = isSpeciesId(removed) ? removed : "frog";
+  const species = SPECIES[removedSpeciesId];
   return (
     <main className="experiment-screen">
-      <header><span>{species.emoji}</span><div><small>{species.name}이(가) 사라진 뒤</small><h1>두 생태계는 어떻게 달라질까요?</h1></div></header>
+      <header><PixelSpeciesIcon speciesId={removedSpeciesId} /><div><small>{species.name}이(가) 사라진 뒤</small><h1>두 생태계는 어떻게 달라질까요?</h1></div></header>
       <div className="experiment-boards">
         <PopulationBoard result={comparison.a} tick={tick} label="A · 실제 기록만 연결" color="#ff645f" />
         <PopulationBoard result={comparison.b} tick={tick} label="B · 완성한 먹이그물" color="#4ca8ff" />
@@ -75,7 +77,7 @@ export function FinalResultsScreen(): JSX.Element {
       ? "먹이 관계가 다양하면 한 생물이 사라져도 다른 먹이를 이용해 변화를 견딜 수 있어요."
       : "두 생태계 모두 영향을 받았어요. 어떤 관계가 부족했는지 먹이그물을 다시 살펴보세요.";
   }, [comparison]);
-  if (!comparison) return <IntermissionScreen icon="📊" title="아직 실험 결과가 없어요" copy="선생님과 함께 실험을 시작해 보세요." />;
+  if (!comparison) return <IntermissionScreen title="아직 실험 결과가 없어요" copy="선생님과 함께 실험을 시작해 보세요." />;
   const removedName = isSpeciesId(removed) ? SPECIES[removed].name : "한 생물";
   return (
     <main className="results-screen">
@@ -84,7 +86,7 @@ export function FinalResultsScreen(): JSX.Element {
         <section className="result-card result-a"><h2>A · 실제 기록만</h2><TrendChart result={comparison.a} color="#ff645f" /><p>추가로 사라진 생물 <strong>{comparison.a.extinctSpecies.length}종</strong></p></section>
         <section className="result-card result-b"><h2>B · 완성한 먹이그물</h2><TrendChart result={comparison.b} color="#4ca8ff" /><p>추가로 사라진 생물 <strong>{comparison.b.extinctSpecies.length}종</strong></p></section>
       </div>
-      <div className="conclusion-bubble"><span>💡</span><strong>{conclusion}</strong></div>
+      <div className="conclusion-bubble"><strong>{conclusion}</strong></div>
     </main>
   );
 }
@@ -116,7 +118,7 @@ function ModePopulationChart({ result, ids }: { result: ModeResult; ids: readonl
   return (
     <div className="mode-chart-wrap">
       <div className="mode-chart-legend">
-        {ids.map((id) => <span key={id}><i style={{ background: SPECIES[id].cssColor }} />{SPECIES[id].emoji} {SPECIES[id].name}</span>)}
+        {ids.map((id) => <span key={id}><i style={{ background: SPECIES[id].cssColor }} /><PixelSpeciesIcon speciesId={id} /> {SPECIES[id].name}</span>)}
       </div>
       <svg className="mode-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="시간에 따른 개체수 변화">
         {[0, 1, 2, 3, 4].map((line) => <line key={line} x1="32" x2={width - 14} y1={18 + line * 42} y2={18 + line * 42} stroke="#ffffff22" />)}
@@ -133,7 +135,7 @@ export function ModeResultScreen(): JSX.Element {
   const result = useGameStore((state) => state.snapshot.modeResult);
   const [selectedSpecies, setSelectedSpecies] = useState<PlayableSpeciesId | null>(null);
   if (!result || !isGameModeId(result.modeId)) {
-    return <IntermissionScreen icon="📊" title="게임 결과를 준비하고 있어요" copy="잠시만 기다려 주세요." />;
+    return <IntermissionScreen title="게임 결과를 준비하고 있어요" copy="잠시만 기다려 주세요." />;
   }
   const config = modeConfig(result.modeId, isSpeciesId(result.removedSpecies) ? result.removedSpecies : undefined);
   const chain = chainOrder(result);
@@ -149,22 +151,22 @@ export function ModeResultScreen(): JSX.Element {
       <header className="mode-result-header">
         <div><small>{config.number}번 게임 · {modeTime(result.durationMs)}</small><h1>{config.title}</h1></div>
         {result.modeId === "chain_removal"
-          ? <div className="removed-badge">🐸 개구리 플레이어 없음 · NPC로 관찰</div>
-          : result.removedSpecies && isSpeciesId(result.removedSpecies) && <div className="removed-badge">🚫 {SPECIES[result.removedSpecies].name} 없음</div>}
+          ? <div className="removed-badge">개구리 플레이어 없음 · NPC로 관찰</div>
+          : result.removedSpecies && isSpeciesId(result.removedSpecies) && <div className="removed-badge">{SPECIES[result.removedSpecies].name} 없음</div>}
       </header>
       <section className="mode-result-summary">
         <div className="mode-population-grid">
           <small className="mode-population-caption">종별 최종 개체수 합계</small>
           {ids.map((id) => <article key={id} className={(result.finalPopulations[id] ?? 0) === 0 ? "extinct" : ""}>
-            <span>{SPECIES[id].emoji}</span><small>{SPECIES[id].name}</small><strong>{result.finalPopulations[id] ?? 0}</strong><em>최고 {result.peakPopulations[id] ?? 0}</em>
+            <span><PixelSpeciesIcon speciesId={id} /></span><small>{SPECIES[id].name}</small><strong>{result.finalPopulations[id] ?? 0}</strong><em>최고 {result.peakPopulations[id] ?? 0}</em>
           </article>)}
         </div>
         <div className="mode-chain-card">
           <small>{config.kind === "chain" ? "이번 게임의 먹이사슬" : "이번 게임에서 확인한 먹이 관계"}</small>
           {config.kind === "chain" ? (
-            <div className="mode-chain-flow">{chain.map((id, index) => <span key={id}><b>{SPECIES[id].emoji}</b><small>{SPECIES[id].name}</small>{index < chain.length - 1 && <i>→</i>}</span>)}</div>
+            <div className="mode-chain-flow">{chain.map((id, index) => <span key={id}><b><PixelSpeciesIcon speciesId={id} /></b><small>{SPECIES[id].name}</small>{index < chain.length - 1 && <i>→</i>}</span>)}</div>
           ) : (
-            <div className="mode-relation-list">{(result.observedRelations.length ? result.observedRelations : config.relations).map((edge) => <span key={`${edge.prey}-${edge.predator}`}><b>{SPECIES[edge.prey].emoji} {SPECIES[edge.prey].name}</b> → {SPECIES[edge.predator].emoji} {SPECIES[edge.predator].name}</span>)}</div>
+            <div className="mode-relation-list">{(result.observedRelations.length ? result.observedRelations : config.relations).map((edge) => <span key={`${edge.prey}-${edge.predator}`}><b>{SPECIES[edge.prey].name}</b> → {SPECIES[edge.predator].name}</span>)}</div>
           )}
         </div>
       </section>
@@ -174,7 +176,7 @@ export function ModeResultScreen(): JSX.Element {
       </section>
       {playableIds.length > 0 && <section className="mode-ranking-card">
         <header><h2>플레이어 개체수 순위</h2><small>생물을 눌러 순위를 바꿔 보세요.</small></header>
-        <div className="ranking-species-tabs">{playableIds.map((id) => <button key={id} className={id === rankingSpecies ? "active" : ""} onClick={() => setSelectedSpecies(id)}>{SPECIES[id].emoji} {SPECIES[id].name}</button>)}</div>
+        <div className="ranking-species-tabs">{playableIds.map((id) => <button key={id} className={id === rankingSpecies ? "active" : ""} onClick={() => setSelectedSpecies(id)}><PixelSpeciesIcon speciesId={id} /> {SPECIES[id].name}</button>)}</div>
         <ol>{ranking.map((player) => <li key={player.id}><span>{player.name}</span><strong>{player.finalPopulation}</strong><small>개체 · 먹기 {player.successfulEats}회</small></li>)}</ol>
       </section>}
     </main>

@@ -13,6 +13,7 @@ import {
   MoveInput,
   applyMovement,
   canEat,
+  canSeeThroughCover,
   clampToBounds,
   collidesWithObstacle,
   edgesFromKeys,
@@ -212,6 +213,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       ? { x: Math.max(-1, Math.min(1, input.facingX)), y: Math.max(-1, Math.min(1, input.facingY)) }
       : undefined;
     if (!isWithinEatServerReach(attacker, { x: targetX, y: targetY }, requestedFacing)) return;
+    // Bushes are a shared visibility rule: a player outside cannot target a character hidden in
+    // a different cover zone. Plants remain visible so the map still communicates food sources.
+    if ((playerTarget || animalTarget) && !canSeeThroughCover(attacker.x, attacker.y, targetX, targetY)) return;
     if ((playerTarget && playerTarget.status !== "active") || (plantTarget && !plantTarget.active) || (animalTarget && (animalTarget.status !== "active" || animalTarget.extinct))) return;
 
     const preySpecies = playerTarget?.species ?? plantTarget?.species ?? animalTarget?.species ?? "";
@@ -1097,10 +1101,10 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       if (plant.active && this.isSpeciesActiveInMode(plant.species) && this.canEatInCurrentPhase(species, plant.species)) candidates.push({ id: plant.id, kind: "plant", species: plant.species, x: plant.x, y: plant.y, distance: Math.hypot(plant.x - x, plant.y - y) });
     });
     this.state.players.forEach((player) => {
-      if (player.status === "active" && this.isSpeciesActiveInMode(player.species) && this.canEatInCurrentPhase(species, player.species)) candidates.push({ id: player.id, kind: "player", species: player.species, x: player.x, y: player.y, distance: Math.hypot(player.x - x, player.y - y) });
+      if (player.status === "active" && this.isSpeciesActiveInMode(player.species) && this.canEatInCurrentPhase(species, player.species) && canSeeThroughCover(x, y, player.x, player.y)) candidates.push({ id: player.id, kind: "player", species: player.species, x: player.x, y: player.y, distance: Math.hypot(player.x - x, player.y - y) });
     });
     this.state.animals.forEach((animal) => {
-      if (animal.id !== selfId && animal.status === "active" && !animal.extinct && this.isSpeciesActiveInMode(animal.species) && this.canEatInCurrentPhase(species, animal.species)) candidates.push({ id: animal.id, kind: "animal", species: animal.species, x: animal.x, y: animal.y, distance: Math.hypot(animal.x - x, animal.y - y) });
+      if (animal.id !== selfId && animal.status === "active" && !animal.extinct && this.isSpeciesActiveInMode(animal.species) && this.canEatInCurrentPhase(species, animal.species) && canSeeThroughCover(x, y, animal.x, animal.y)) candidates.push({ id: animal.id, kind: "animal", species: animal.species, x: animal.x, y: animal.y, distance: Math.hypot(animal.x - x, animal.y - y) });
     });
     return candidates.sort((a, b) => a.distance - b.distance)[0] ?? null;
   }
