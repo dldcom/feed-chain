@@ -4,6 +4,7 @@ import {
   EAT_COOLDOWN_MS,
   EAT_RANGE,
   GHOST_DURATION_MS,
+  MAX_STUDENT_COUNT,
   PHASE_LABELS,
   PLANT_SPAWN_POINTS,
   ROLE_DISTRIBUTION_23,
@@ -26,6 +27,7 @@ import {
   isWebPhase,
   nextPhase,
   relationKey,
+  roleSlotsForMode,
   roundedScore,
   scoreForRelation,
   simulateEcosystem,
@@ -53,6 +55,8 @@ interface RoomOptions {
 const ROUND_DURATION_MS = 5 * 60 * 1000;
 const EXPERIMENT_DURATION_MS = 3 * 60 * 1000;
 const PLANT_RESPAWN_MS = 12000;
+const CLASS_TTL_MS = 24 * 60 * 60 * 1000;
+const LOBBY_RECONNECT_WINDOW_MS = 10 * 60 * 1000;
 // 먹이를 못 찾았을 때 약 111초 후 고갈된다. 1·2판에서는 고갈 시 감속만 적용한다.
 const HUNGER_PER_SECOND = 0.9;
 const CATERPILLAR_ESCAPE_MS = 1500;
@@ -60,7 +64,7 @@ const CATERPILLAR_ESCAPE_SPEED = 1.3;
 const MODE_TIMELINE_INTERVAL_MS = 5000;
 
 export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> {
-  maxClients = 24;
+  maxClients = MAX_STUDENT_COUNT + 1;
   inputs = this.defineInput(MoveInput, {
     bufferMaxSize: 64,
     sanitize: { x: [-1, 1], y: [-1, 1] },
@@ -71,6 +75,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   private discoveredByPlayer = new Map<string, Set<string>>();
   private lastEatAt = new Map<string, number>();
   private disconnectedAt = new Map<string, number>();
+  private disconnectedModeInstance = new Map<string, number>();
   private experimentSeed = 20260830;
   private mealsSinceBirth = new Map<string, number>();
   private npcWander = new Map<string, { x: number; y: number; changeAt: number }>();
@@ -80,6 +85,26 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   private modeTimeline: ModeTimelinePoint[] = [];
   private nextTimelineAt = 0;
   private completedModeResults: ModeResult[] = [];
+  private modeInstanceId = 0;
+  private modeStartedAt = 0;
+  private modeEndsAt = 0;
+  private reconnectEnabled = false;
+  /** Key of the role set prepared by the teacher for the next mode. */
+  private rolesPreparedForMode = "";
+  /** A late joiner invalidates the prepared slots so the next start rebalances. */
+  private rolesPreparedForPlayerCount = -1;
+  /**
+   * The roles from the most recently completed mode are kept only as a soft
+   * preference for the next mode's automatic assignment.  The teacher's
+   * manual changes are included because this snapshot is taken at result time.
+   */
+  private lastCompletedModeId: GameModeId | null = null;
+  private lastCompletedRoleAssignments = new Map<string, PlayableSpeciesId>();
+  private pausedAt = 0;
+  private roomExpiresAt = 0;
+  private roomExpiryTimer?: ReturnType<typeof setTimeout>;
+  private roomExpired = false;
+  private roleRevealTimer?: ReturnType<typeof setTimeout>;
 
   onCreate(options: RoomOptions): void {
     const requestedCode = (options.roomCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
@@ -94,7 +119,13 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.modeNumber = 0;
     this.state.modeTitle = "";
     this.state.modeElapsedMs = 0;
+    this.state.modeInstanceId = 0;
+    this.state.roleRevealEndsAt = 0;
     this.state.modeResultJson = "";
+    this.roomExpiresAt = Date.now() + CLASS_TTL_MS;
+    this.roomExpiryTimer = setTimeout(() => this.expireRoom(), CLASS_TTL_MS);
+    const roomTimer = this.roomExpiryTimer as unknown as { unref?: () => void };
+    roomTimer.unref?.();
     this.patchRate = 50;
     this.seedPlants();
 
@@ -108,6 +139,10 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   }
 
   onJoin(client: Client, options: RoomOptions): void {
+    if (this.roomExpired) {
+      client.leave(4005, "수업방이 만료되었습니다.");
+      return;
+    }
     if (options.isTeacher) {
       if (!this.teacherToken || options.teacherToken !== this.teacherToken) {
         client.leave(4001, "교사 인증 정보가 올바르지 않습니다.");
@@ -118,8 +153,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       return;
     }
 
-    if (this.state.players.size >= 23) {
-      client.leave(4002, "이 수업에는 이미 23명이 참여했습니다.");
+    if (this.state.players.size >= MAX_STUDENT_COUNT) {
+      client.leave(4002, `이 수업에는 이미 ${MAX_STUDENT_COUNT}명이 참여했습니다.`);
       return;
     }
 
@@ -146,6 +181,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     if (player.status === "active") this.lifeStartedAt.set(client.sessionId, Date.now());
     else this.lifeStartedAt.delete(client.sessionId);
     this.refreshPopulationState();
+    this.sendTeacherRoleAssignments();
     this.broadcast("notice", { kind: "info", text: `${player.name} 탐험가가 들어왔어요!` });
   }
 
@@ -154,16 +190,49 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     if (player) {
       player.connected = false;
       this.disconnectedAt.set(client.sessionId, Date.now());
+      this.disconnectedModeInstance.set(client.sessionId, this.modeInstanceId);
     }
-    if (code !== CloseCode.CONSENTED) this.allowReconnection(client, 30);
+    if (code === CloseCode.CONSENTED) return;
+
+    const now = Date.now();
+    const seconds = this.reconnectionSeconds(now, Boolean(player));
+    if (seconds > 0) this.allowReconnection(client, seconds);
   }
 
   onReconnect(client: Client): void {
+    const isTeacher = this.teacherSessionId === client.sessionId;
+    // A reconnect token can outlive a mode. Once the current game has ended,
+    // do not let an old socket re-enter the finished state.
+    if (this.roomExpired || (!isTeacher && this.state.phase !== "lobby" && !this.reconnectEnabled)) {
+      client.leave(4003, "이 게임의 재접속 시간이 끝났습니다.");
+      return;
+    }
+    if (!isTeacher && this.reconnectEnabled && this.modeEndsAt > 0 && Date.now() >= this.modeEndsAt) {
+      client.leave(4003, "이 게임의 재접속 시간이 끝났습니다.");
+      return;
+    }
     const player = this.state.players.get(client.sessionId);
-    if (player) player.connected = true;
-    this.disconnectedAt.delete(client.sessionId);
-    this.lifeStartedAt.delete(client.sessionId);
-    if (!player && this.teacherSessionId === client.sessionId) this.teacherSessionId = client.sessionId;
+    const droppedModeInstance = this.disconnectedModeInstance.get(client.sessionId);
+    if (player && droppedModeInstance !== undefined && droppedModeInstance > 0 && droppedModeInstance !== this.modeInstanceId) {
+      client.leave(4003, "이전 게임의 재접속 시간이 끝났습니다.");
+      return;
+    }
+    if (player) {
+      const disconnectedAt = this.disconnectedAt.get(client.sessionId);
+      const offlineMs = disconnectedAt ? Math.max(0, Date.now() - disconnectedAt) : 0;
+      this.shiftPlayerDeadlines(player, offlineMs);
+      player.connected = true;
+      this.disconnectedAt.delete(client.sessionId);
+      this.disconnectedModeInstance.delete(client.sessionId);
+      if (this.state.phase === "role_reveal") this.sendRoleBriefing(client, player);
+      else if (isActivePlayPhase(this.state.phase as GamePhase)) this.sendPublicSpecies(client);
+      return;
+    }
+    if (this.teacherSessionId === client.sessionId) {
+      this.sendTeacherRoleAssignments(client);
+      return;
+    }
+    client.leave(4003, "이 게임의 재접속 시간이 끝났습니다.");
   }
 
   onLeave(client: Client): void {
@@ -176,7 +245,115 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.discoveredByPlayer.delete(client.sessionId);
     this.lastEatAt.delete(client.sessionId);
     this.disconnectedAt.delete(client.sessionId);
+    this.disconnectedModeInstance.delete(client.sessionId);
+    this.lastCompletedRoleAssignments.delete(client.sessionId);
     this.refreshPopulationState();
+  }
+
+  onDispose(): void {
+    if (this.roomExpiryTimer) clearTimeout(this.roomExpiryTimer);
+    if (this.roleRevealTimer) clearTimeout(this.roleRevealTimer);
+    this.roomExpiryTimer = undefined;
+    this.roleRevealTimer = undefined;
+    this.disconnectedAt.clear();
+    this.disconnectedModeInstance.clear();
+    this.lastEatAt.clear();
+    this.lifeStartedAt.clear();
+    this.mealsSinceBirth.clear();
+    this.npcWander.clear();
+  }
+
+  private expireRoom(): void {
+    if (this.roomExpired) return;
+    this.roomExpired = true;
+    this.reconnectEnabled = false;
+    this.broadcast("notice", { kind: "warning", text: "수업방이 24시간이 지나 만료되었습니다." });
+    void this.lock().catch(() => undefined);
+    void this.disconnect(4005).catch(() => undefined);
+  }
+
+  private reconnectionSeconds(now: number, isPlayer: boolean): number {
+    if (this.roomExpired) return 0;
+    if (isPlayer && this.reconnectEnabled && this.modeEndsAt > now) {
+      return Math.max(1, Math.ceil((this.modeEndsAt - now) / 1000));
+    }
+    if (!isPlayer && this.teacherSessionId) {
+      return Math.max(1, Math.ceil((this.roomExpiresAt - now) / 1000));
+    }
+    if (isPlayer && this.state.phase === "lobby") {
+      return Math.ceil(LOBBY_RECONNECT_WINDOW_MS / 1000);
+    }
+    return 0;
+  }
+
+  /** Freeze player-only timers while offline so a network blip never costs a life. */
+  private shiftPlayerDeadlines(player: PlayerState, offlineMs: number): void {
+    if (offlineMs <= 0) return;
+    const shift = (value: number): number => value > 0 ? value + offlineMs : value;
+    player.wrongUntil = shift(player.wrongUntil);
+    player.eatReadyAt = shift(player.eatReadyAt);
+    player.ghostUntil = shift(player.ghostUntil);
+    player.respawnAt = shift(player.respawnAt);
+    player.skillReadyAt = shift(player.skillReadyAt);
+    player.skillActiveUntil = shift(player.skillActiveUntil);
+    player.escapeUntil = shift(player.escapeUntil);
+    player.lastFoodAt = shift(player.lastFoodAt);
+    const lifeStartedAt = this.lifeStartedAt.get(player.id);
+    if (lifeStartedAt !== undefined) this.lifeStartedAt.set(player.id, lifeStartedAt + offlineMs);
+  }
+
+  private sendRoleBriefing(client: Client, player: PlayerState): void {
+    if (!isPlayableSpeciesId(player.species)) return;
+    const mode = this.currentMode;
+    const relations = mode?.relations ?? CANONICAL_FOOD_RELATIONS;
+    const foods = [...new Set(relations.filter((edge) => edge.predator === player.species).map((edge) => edge.prey))];
+    const predators = [...new Set(relations.filter((edge) => edge.prey === player.species).map((edge) => edge.predator))];
+    const skill = SPECIES[player.species].skill;
+    client.send("role_briefing", {
+      modeId: mode?.id ?? "",
+      modeNumber: mode?.number ?? 0,
+      modeTitle: mode?.title ?? "먹이 관계 탐색",
+      species: player.species,
+      foods,
+      predators,
+      skill: skill ? {
+        id: skill.id,
+        name: skill.name,
+        kind: skill.kind,
+        durationMs: skill.durationMs,
+        cooldownMs: skill.cooldownMs,
+      } : null,
+      revealEndsAt: this.state.roleRevealEndsAt,
+    });
+  }
+
+  private sendTeacherRoleAssignments(client = this.clients.find((entry) => entry.sessionId === this.teacherSessionId)): void {
+    if (!client) return;
+    client.send("teacher_roles", [...this.state.players.values()]
+      .filter((player) => isPlayableSpeciesId(player.species))
+      .map((player) => ({ playerId: player.id, playerName: player.name, species: player.species })));
+  }
+
+  private sendAllRoleBriefings(): void {
+    this.state.players.forEach((player) => {
+      const client = this.clients.find((entry) => entry.sessionId === player.id);
+      if (client) this.sendRoleBriefing(client, player);
+    });
+    this.sendTeacherRoleAssignments();
+  }
+
+  private publicSpeciesPayload(): { modeInstanceId: number; species: Record<string, PlayableSpeciesId> } {
+    const species: Record<string, PlayableSpeciesId> = {};
+    this.state.players.forEach((player) => {
+      if (isPlayableSpeciesId(player.species)) species[player.id] = player.species;
+    });
+    return { modeInstanceId: this.modeInstanceId, species };
+  }
+
+  private sendPublicSpecies(client?: Client): void {
+    const payload = this.publicSpeciesPayload();
+    if (client) client.send("public_species", payload);
+    else this.broadcast("public_species", payload);
   }
 
   private cleanNickname(value: string): string {
@@ -199,7 +376,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     if (!isActivePlayPhase(this.state.phase as GamePhase) || this.state.paused) return;
     const now = Date.now();
     const attacker = this.state.players.get(client.sessionId);
-    if (!attacker || attacker.status !== "active" || attacker.wrongUntil > now) return;
+    if (!attacker || !attacker.connected || attacker.status !== "active" || attacker.wrongUntil > now) return;
     if ((this.lastEatAt.get(client.sessionId) ?? 0) + EAT_COOLDOWN_MS > now) return;
 
     const playerTarget = this.state.players.get(input.targetId);
@@ -216,7 +393,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     // Bushes are a shared visibility rule: a player outside cannot target a character hidden in
     // a different cover zone. Plants remain visible so the map still communicates food sources.
     if ((playerTarget || animalTarget) && !canSeeThroughCover(attacker.x, attacker.y, targetX, targetY)) return;
-    if ((playerTarget && playerTarget.status !== "active") || (plantTarget && !plantTarget.active) || (animalTarget && (animalTarget.status !== "active" || animalTarget.extinct))) return;
+    if ((playerTarget && (!playerTarget.connected || playerTarget.status !== "active")) || (plantTarget && !plantTarget.active) || (animalTarget && (animalTarget.status !== "active" || animalTarget.extinct))) return;
 
     const preySpecies = playerTarget?.species ?? plantTarget?.species ?? animalTarget?.species ?? "";
     // 모드에서 빠진 종은 오래된 클라이언트 스냅샷으로 눌러도 행동으로 처리하지 않는다.
@@ -542,26 +719,39 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     if (client.sessionId !== this.teacherSessionId) return;
     switch (command.action) {
       case "assign_roles":
-        this.assignRoles();
-        this.transitionTo("role_reveal");
+        if (command.modeId && isGameModeId(command.modeId)) {
+          const removed = command.removedSpecies && isSpeciesId(command.removedSpecies) ? command.removedSpecies : undefined;
+          this.assignRolesForMode(modeConfig(command.modeId, removed));
+        } else {
+          this.assignRoles();
+        }
+        this.broadcast("notice", { kind: "info", text: "역할을 다시 섞었어요. 선생님 화면에서 확인해 주세요." });
         break;
       case "reveal_roles":
         this.transitionTo("role_reveal");
         break;
       case "set_role":
-        if (command.playerId && command.species && isPlayableSpeciesId(command.species) && (this.state.phase === "lobby" || this.state.phase === "role_reveal")) {
+        if (command.playerId && command.species && isPlayableSpeciesId(command.species) && (this.state.phase === "lobby" || this.state.phase === "mode_setup" || this.state.phase === "role_reveal")) {
           const player = this.state.players.get(command.playerId);
-          if (player) player.species = command.species;
+          if (player) {
+            player.species = command.species;
+            this.sendTeacherRoleAssignments();
+          }
         }
         break;
       case "next_phase":
         this.transitionTo(command.phase ?? nextPhase(this.state.phase as GamePhase));
         break;
       case "pause":
+        if (!this.state.paused) this.pausedAt = Date.now();
         this.state.paused = true;
         this.broadcast("notice", { kind: "info", text: "선생님이 게임을 잠시 멈췄어요." });
         break;
       case "resume":
+        if (this.state.paused && this.pausedAt > 0 && this.modeEndsAt > 0) {
+          this.modeEndsAt += Math.max(0, Date.now() - this.pausedAt);
+        }
+        this.pausedAt = 0;
         this.state.paused = false;
         this.broadcast("notice", { kind: "info", text: "게임을 다시 시작해요!" });
         break;
@@ -584,42 +774,151 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       case "adjust_time":
         if (isActivePlayPhase(this.state.phase as GamePhase) && Number.isFinite(command.deltaMs)) {
           const delta = Math.max(-60000, Math.min(60000, command.deltaMs ?? 0));
+          const before = this.state.timeRemainingMs;
           this.state.timeRemainingMs = Math.max(0, Math.min(10 * 60 * 1000, this.state.timeRemainingMs + delta));
+          if (this.modeEndsAt > 0) this.modeEndsAt += this.state.timeRemainingMs - before;
         }
         break;
     }
   }
 
   private assignRoles(): void {
-    const shuffled = [...ROLE_DISTRIBUTION_23].sort(() => Math.random() - 0.5);
+    this.rolesPreparedForMode = "";
+    this.rolesPreparedForPlayerCount = this.state.players.size;
+    const slots = roleSlotsForMode(modeConfig("web_observe"), this.state.players.size);
+    const shuffled = this.shuffleRoles(slots.length ? slots : [...ROLE_DISTRIBUTION_23]);
     let index = 0;
     this.state.players.forEach((player) => {
       player.species = shuffled[index % shuffled.length] ?? "grasshopper";
       index += 1;
     });
+    this.sendTeacherRoleAssignments();
   }
 
   private startMode(modeId: GameModeId, removedSpecies?: SpeciesId): void {
     const resolvedRemoved = modeId === "chain_removal" ? "frog" : removedSpecies;
     const mode = modeConfig(modeId, resolvedRemoved);
     this.currentMode = mode;
-    this.assignRolesForMode(mode);
+    const modeKey = `${mode.id}:${mode.removedSpecies ?? ""}`;
+    const rolesReady = this.rolesPreparedForMode === modeKey
+      && this.rolesPreparedForPlayerCount === this.state.players.size
+      && [...this.state.players.values()].every((player) => mode.playableSpecies.includes(player.species as PlayableSpeciesId));
+    if (!rolesReady) this.assignRolesForMode(mode);
     this.state.modeId = mode.id;
     this.state.modeNumber = mode.number;
     this.state.modeTitle = mode.title;
     this.state.removedSpecies = mode.removedSpecies ?? "";
+    this.modeInstanceId += 1;
+    this.state.modeInstanceId = this.modeInstanceId;
+    this.modeStartedAt = 0;
+    this.modeEndsAt = 0;
+    this.reconnectEnabled = false;
+    this.pausedAt = 0;
+    void this.lock().catch(() => undefined);
     this.broadcast("notice", { kind: "info", text: `${mode.number}번 게임을 시작해요: ${mode.title}` });
-    this.transitionTo("mode_play");
+    this.transitionTo("role_reveal");
   }
 
   private assignRolesForMode(mode: GameModeConfig): void {
     if (!mode.playableSpecies.length) return;
-    const shuffled = [...mode.playableSpecies].sort(() => Math.random() - 0.5);
-    let index = 0;
-    this.state.players.forEach((player) => {
-      player.species = shuffled[index % shuffled.length] ?? mode.playableSpecies[0]!;
-      index += 1;
+    this.rolesPreparedForMode = `${mode.id}:${mode.removedSpecies ?? ""}`;
+    this.rolesPreparedForPlayerCount = this.state.players.size;
+    const slots = roleSlotsForMode(mode, this.state.players.size);
+    const roleSlots = slots.length ? slots : [...mode.playableSpecies];
+    const players = [...this.state.players.values()];
+    const previousRoles = this.lastCompletedModeId && this.lastCompletedModeId !== mode.id
+      ? this.lastCompletedRoleAssignments
+      : undefined;
+    const assignments = this.assignRoleSlots(players, roleSlots, previousRoles);
+    players.forEach((player, index) => {
+      player.species = assignments.get(player.id)
+        ?? roleSlots[index % roleSlots.length]
+        ?? mode.playableSpecies[0]!;
     });
+    this.sendTeacherRoleAssignments();
+  }
+
+  /**
+   * Assign an exact role-slot multiset while minimizing a student's role
+   * overlap with the previous mode.  A maximum matching over "different role"
+   * edges gives the smallest possible number of repeats; any unavoidable
+   * repeats are filled randomly so repeated auto-assign clicks still feel
+   * random to the class.
+   */
+  private assignRoleSlots(
+    players: readonly PlayerState[],
+    slots: readonly PlayableSpeciesId[],
+    previousRoles?: ReadonlyMap<string, PlayableSpeciesId>,
+  ): Map<string, PlayableSpeciesId> {
+    const assignments = new Map<string, PlayableSpeciesId>();
+    if (!players.length || !slots.length) return assignments;
+
+    const slotOrder = this.shuffle([...slots.keys()]);
+    const playerOrder = this.shuffle([...players.keys()]);
+    const matchedPlayerBySlot = new Array<number>(slots.length).fill(-1);
+
+    const matchDifferentRole = (playerIndex: number, visitedSlots: Set<number>): boolean => {
+      const player = players[playerIndex];
+      if (!player) return false;
+      const previousRole = previousRoles?.get(player.id);
+
+      for (const slotIndex of slotOrder) {
+        if (visitedSlots.has(slotIndex)) continue;
+        const slotRole = slots[slotIndex];
+        if (!slotRole || (previousRole && previousRole === slotRole)) continue;
+        visitedSlots.add(slotIndex);
+        const currentPlayerIndex = matchedPlayerBySlot[slotIndex] ?? -1;
+        if (currentPlayerIndex < 0 || matchDifferentRole(currentPlayerIndex, visitedSlots)) {
+          matchedPlayerBySlot[slotIndex] = playerIndex;
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Kuhn's augmenting-path algorithm maximizes assignments that differ from
+    // the previous mode, which is exactly the soft preference we need here.
+    playerOrder.forEach((playerIndex) => {
+      matchDifferentRole(playerIndex, new Set<number>());
+    });
+
+    const matchedPlayers = new Set<number>();
+    const openSlotIndexes: number[] = [];
+    matchedPlayerBySlot.forEach((playerIndex, slotIndex) => {
+      if (playerIndex < 0) {
+        openSlotIndexes.push(slotIndex);
+        return;
+      }
+      const player = players[playerIndex];
+      const role = slots[slotIndex];
+      if (player && role) {
+        assignments.set(player.id, role);
+        matchedPlayers.add(playerIndex);
+      }
+    });
+
+    const openPlayerIndexes = playerOrder.filter((playerIndex) => !matchedPlayers.has(playerIndex));
+    this.shuffle(openSlotIndexes).forEach((slotIndex, index) => {
+      const playerIndex = openPlayerIndexes[index];
+      const player = playerIndex === undefined ? undefined : players[playerIndex];
+      const role = slots[slotIndex];
+      if (player && role) assignments.set(player.id, role);
+    });
+
+    return assignments;
+  }
+
+  private shuffle<T>(items: readonly T[]): T[] {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex]!, shuffled[index]!];
+    }
+    return shuffled;
+  }
+
+  private shuffleRoles(roles: readonly PlayableSpeciesId[]): PlayableSpeciesId[] {
+    return this.shuffle(roles);
   }
 
   private resetModeState(mode: GameModeConfig): void {
@@ -710,9 +1009,31 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
 
   private finishMode(): void {
     if (!this.currentMode || this.state.modeResultJson) return;
+    // Save the roles that were actually played.  This includes any manual
+    // teacher changes and becomes the soft no-repeat preference for the next
+    // mode's automatic assignment.
+    this.lastCompletedModeId = this.currentMode.id;
+    this.lastCompletedRoleAssignments = new Map<string, PlayableSpeciesId>();
+    this.state.players.forEach((player) => {
+      if (isPlayableSpeciesId(player.species)) {
+        this.lastCompletedRoleAssignments.set(player.id, player.species);
+      }
+    });
     this.refreshPopulationState();
     const lastPoint = this.modeTimeline[this.modeTimeline.length - 1];
     if (!lastPoint || lastPoint.elapsedMs !== this.state.modeElapsedMs) this.recordModeTimeline(this.state.modeElapsedMs);
+    const playerPopulations: Partial<Record<SpeciesId, number>> = {};
+    const npcPopulations: Partial<Record<SpeciesId, number>> = {};
+    const plantPopulations: Partial<Record<SpeciesId, number>> = {};
+    const addPopulation = (target: Partial<Record<SpeciesId, number>>, species: string, count: number): void => {
+      if (!isSpeciesId(species)) return;
+      target[species] = (target[species] ?? 0) + Math.max(0, count);
+    };
+    this.state.players.forEach((player) => addPopulation(playerPopulations, player.species, player.populationCount));
+    this.state.animals.forEach((animal) => addPopulation(npcPopulations, animal.species, animal.populationCount));
+    this.state.plants.forEach((plant) => {
+      if (plant.active) addPopulation(plantPopulations, plant.species, plant.populationCount);
+    });
     const finalPopulations: Partial<Record<SpeciesId, number>> = {};
     const peakPopulations: Partial<Record<SpeciesId, number>> = {};
     this.currentMode.activeSpecies.forEach((species) => {
@@ -737,6 +1058,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       modeNumber: this.currentMode.number,
       removedSpecies: this.currentMode.removedSpecies ?? "",
       durationMs: this.currentMode.durationMs,
+      playerPopulations,
+      npcPopulations,
+      plantPopulations,
       finalPopulations,
       peakPopulations,
       timeline: [...this.modeTimeline],
@@ -751,10 +1075,31 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   }
 
   private transitionTo(phase: GamePhase): void {
+    const previousPhase = this.state.phase as GamePhase;
+    if (this.roleRevealTimer) {
+      clearTimeout(this.roleRevealTimer);
+      this.roleRevealTimer = undefined;
+    }
     this.state.phase = phase;
     this.state.paused = false;
     this.state.shrinkStage = 0;
-    if (phase === "mode_play") {
+    if (phase === "role_reveal") {
+      const revealStartedAt = Date.now();
+      this.state.roleRevealEndsAt = revealStartedAt + 10000;
+      this.state.timeRemainingMs = 0;
+      this.pausedAt = 0;
+      if (this.currentMode) {
+        // Reserve the whole mode window from the moment the briefing opens.
+        this.reconnectEnabled = true;
+        this.modeStartedAt = revealStartedAt;
+        this.modeEndsAt = revealStartedAt + 10000 + this.currentMode.durationMs;
+        this.roleRevealTimer = setTimeout(() => {
+          if (this.state.phase === "role_reveal") this.transitionTo("mode_play");
+        }, 10000);
+      }
+      this.sendAllRoleBriefings();
+    } else if (phase === "mode_play") {
+      if (previousPhase === "role_reveal") this.broadcast("role_reveal_finished", {});
       if (!this.currentMode && isGameModeId(this.state.modeId)) {
         this.currentMode = modeConfig(this.state.modeId, isSpeciesId(this.state.removedSpecies) ? this.state.removedSpecies : undefined);
       }
@@ -763,8 +1108,14 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
         this.state.modeNumber = this.currentMode.number;
         this.state.modeTitle = this.currentMode.title;
         this.state.timeRemainingMs = this.currentMode.durationMs;
+        this.state.roleRevealEndsAt = 0;
+        this.modeStartedAt = Date.now();
+        this.modeEndsAt = this.modeStartedAt + this.currentMode.durationMs;
+        this.reconnectEnabled = true;
+        this.pausedAt = 0;
         this.state.roundNumber = this.currentMode.number;
         this.resetModeState(this.currentMode);
+        this.sendPublicSpecies();
       }
     } else if (phase === "round_1" || phase === "round_2") {
       // 기존 1·2판 흐름은 먹이그물 기록 화면과 호환되도록 전체 종을 유지한다.
@@ -774,29 +1125,52 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       this.state.modeNumber = 0;
       this.state.modeTitle = "";
       this.state.modeElapsedMs = 0;
+      this.state.roleRevealEndsAt = 0;
       this.state.removedSpecies = "";
       this.state.modeResultJson = "";
       this.state.roundNumber = phase === "round_1" ? 1 : 2;
       this.state.timeRemainingMs = ROUND_DURATION_MS;
+      this.modeInstanceId += 1;
+      this.state.modeInstanceId = this.modeInstanceId;
+      this.modeStartedAt = Date.now();
+      this.modeEndsAt = this.modeStartedAt + ROUND_DURATION_MS;
+      this.reconnectEnabled = true;
+      this.pausedAt = 0;
       this.resetPlayersForRound();
       this.state.animals.clear();
       this.state.plants.clear();
       this.seedPlants();
       this.refreshPopulationState();
+      this.sendPublicSpecies();
     } else if (phase === "experiment_a") {
       this.currentMode = null;
       this.state.timeRemainingMs = EXPERIMENT_DURATION_MS;
+      this.modeInstanceId += 1;
+      this.state.modeInstanceId = this.modeInstanceId;
+      this.modeStartedAt = Date.now();
+      this.modeEndsAt = this.modeStartedAt + EXPERIMENT_DURATION_MS;
+      this.reconnectEnabled = true;
+      this.pausedAt = 0;
       this.state.modeId = "";
       this.state.modeNumber = 0;
       this.state.modeTitle = "";
       this.state.modeElapsedMs = 0;
+      this.state.roleRevealEndsAt = 0;
       this.state.modeResultJson = "";
       this.resetPlayersForRound(true);
+      this.sendPublicSpecies();
     } else if (phase === "mode_result") {
       this.state.timeRemainingMs = 0;
       this.finishMode();
+      this.state.roleRevealEndsAt = 0;
+      this.reconnectEnabled = false;
+      this.modeEndsAt = 0;
+      this.pausedAt = 0;
     } else {
       this.state.timeRemainingMs = 0;
+      this.state.roleRevealEndsAt = 0;
+      this.reconnectEnabled = false;
+      this.modeEndsAt = 0;
     }
 
     if (phase === "experiment_b") this.buildExperimentComparison();
@@ -849,6 +1223,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.modeNumber = 0;
     this.state.modeTitle = "";
     this.state.modeElapsedMs = 0;
+    this.state.modeInstanceId = 0;
+    this.state.roleRevealEndsAt = 0;
     this.state.removedSpecies = "";
     this.state.experimentJson = "";
     this.state.modeResultJson = "";
@@ -890,8 +1266,19 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.modeTimeline = [];
     this.nextTimelineAt = 0;
     this.completedModeResults = [];
+    this.modeInstanceId = 0;
+    this.modeStartedAt = 0;
+    this.modeEndsAt = 0;
+    this.reconnectEnabled = false;
+    this.disconnectedModeInstance.clear();
+    this.rolesPreparedForMode = "";
+    this.rolesPreparedForPlayerCount = -1;
+    this.lastCompletedModeId = null;
+    this.lastCompletedRoleAssignments.clear();
+    this.pausedAt = 0;
     this.seedPlants();
     this.refreshPopulationState();
+    void this.unlock().catch(() => undefined);
   }
 
   private updateWorld(deltaMs: number, deltaSeconds: number): void {
@@ -943,7 +1330,10 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   }
 
   private updateTimedStatuses(now: number): void {
-    this.state.players.forEach((player, sessionId) => {
+    this.state.players.forEach((player) => {
+      // A dropped client keeps its exact gameplay state until it reconnects or
+      // the current mode ends. Player-only timers are shifted on reconnect.
+      if (!player.connected) return;
       if (player.status === "respawning" && player.respawnAt > 0 && player.respawnAt <= now) {
         player.status = "active";
         player.respawnAt = 0;
@@ -976,9 +1366,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
           player.escapeUntil = now + CATERPILLAR_ESCAPE_MS;
         }
       }
-      if (!player.connected && (this.disconnectedAt.get(sessionId) ?? now) + 30000 <= now) {
-        this.state.players.delete(sessionId);
-      }
     });
     this.state.animals.forEach((animal) => {
       if (animal.status === "respawning" && animal.respawnAt > 0 && animal.respawnAt <= now) {
@@ -1003,6 +1390,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   }
 
   private updatePlayer(player: PlayerState, input: MoveInput | undefined, deltaMs: number, deltaSeconds: number, now: number): void {
+    if (!player.connected) return;
     if (player.status === "extinct" || player.status === "respawning") {
       player.moveSpeed = 0;
       return;
@@ -1101,7 +1489,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       if (plant.active && this.isSpeciesActiveInMode(plant.species) && this.canEatInCurrentPhase(species, plant.species)) candidates.push({ id: plant.id, kind: "plant", species: plant.species, x: plant.x, y: plant.y, distance: Math.hypot(plant.x - x, plant.y - y) });
     });
     this.state.players.forEach((player) => {
-      if (player.status === "active" && this.isSpeciesActiveInMode(player.species) && this.canEatInCurrentPhase(species, player.species) && canSeeThroughCover(x, y, player.x, player.y)) candidates.push({ id: player.id, kind: "player", species: player.species, x: player.x, y: player.y, distance: Math.hypot(player.x - x, player.y - y) });
+      if (player.connected && player.status === "active" && this.isSpeciesActiveInMode(player.species) && this.canEatInCurrentPhase(species, player.species) && canSeeThroughCover(x, y, player.x, player.y)) candidates.push({ id: player.id, kind: "player", species: player.species, x: player.x, y: player.y, distance: Math.hypot(player.x - x, player.y - y) });
     });
     this.state.animals.forEach((animal) => {
       if (animal.id !== selfId && animal.status === "active" && !animal.extinct && this.isSpeciesActiveInMode(animal.species) && this.canEatInCurrentPhase(species, animal.species) && canSeeThroughCover(x, y, animal.x, animal.y)) candidates.push({ id: animal.id, kind: "animal", species: animal.species, x: animal.x, y: animal.y, distance: Math.hypot(animal.x - x, animal.y - y) });
@@ -1116,7 +1504,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       this.consumePlant(plant, now);
     } else if (kind === "player") {
       const player = this.state.players.get(targetId);
-      if (!player || player.status !== "active" || player.shielded) return false;
+      if (!player || !player.connected || player.status !== "active" || player.shielded) return false;
       this.consumePlayer(player, now);
     } else {
       const target = this.state.animals.get(targetId);
@@ -1147,7 +1535,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       if (collidesWithObstacle(spawn.x, spawn.y)) continue;
       let nearestPredator = Number.POSITIVE_INFINITY;
       this.state.players.forEach((other) => {
-        if (other.status === "active" && this.isSpeciesActiveInMode(other.species) && this.canEatInCurrentPhase(other.species, species)) {
+        if (other.connected && other.status === "active" && this.isSpeciesActiveInMode(other.species) && this.canEatInCurrentPhase(other.species, species)) {
           nearestPredator = Math.min(nearestPredator, Math.hypot(other.x - spawn.x, other.y - spawn.y));
         }
       });

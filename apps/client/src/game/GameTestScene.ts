@@ -489,6 +489,12 @@ export class GameTestScene extends Phaser.Scene {
     let visual: Phaser.GameObjects.Container;
     if (isPlantSpriteSpecies(speciesId)) {
       visual = createPlantVisual(this, speciesId, x, y, "test-");
+    } else if (isSpriteSpecies(speciesId)) {
+      const speciesSprite = this.add
+        .sprite(0, speciesSpriteY(speciesId, -18), movementTextureKey(speciesId, "test-"), movementFrame(0, 1))
+        .setScale(speciesSpriteScale(speciesId));
+      const population = this.add.text(0, -55, "X1", { fontFamily: "Mona12, sans-serif", fontSize: "9px", color: "#fff2a4", backgroundColor: "#173d2de8", padding: { x: 3, y: 2 } }).setOrigin(0.5);
+      visual = this.add.container(x, y, [speciesSprite, population]).setDepth(8);
     } else {
       const image = this.add.image(0, -1, "test-species-atlas");
       this.setAtlasSpecies(image, speciesId, 44);

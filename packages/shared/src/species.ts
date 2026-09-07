@@ -201,6 +201,7 @@ export const PLAYABLE_SPECIES = Object.values(SPECIES).filter(
   (species): species is (typeof SPECIES)[PlayableSpeciesId] => species.playable,
 );
 
+/** Legacy 23-seat distribution for the original round flow; classroom modes use roleSlotsForMode. */
 export const ROLE_DISTRIBUTION_23: readonly PlayableSpeciesId[] = [
   "grasshopper", "grasshopper", "grasshopper",
   "caterpillar", "caterpillar", "caterpillar",

@@ -6,6 +6,7 @@ import { reconnectClass } from "./network/gameClient";
 import { IntermissionScreen } from "./screens/IntermissionScreen";
 import { LandingScreen } from "./screens/LandingScreen";
 import { RoleRevealScreen } from "./screens/RoleRevealScreen";
+import { TeacherLobbyScreen } from "./screens/TeacherLobbyScreen";
 import { TeacherPanel } from "./screens/TeacherPanel";
 import { useGameStore } from "./store/gameStore";
 
@@ -22,7 +23,7 @@ function CurrentScreen(): JSX.Element {
   if (snapshot.phase === "lobby") {
     return role === "teacher"
       ? <IntermissionScreen title="새로운 생태계를 열었어요" copy="학생들이 수업 코드로 들어오면 탐험을 시작할 수 있어요." />
-      : <IntermissionScreen title="탐험대 친구들을 기다리는 중" copy={`${snapshot.players.length}/23명이 모였어요.`} />;
+      : <IntermissionScreen title="학생 대기중" copy={`${snapshot.players.length}명이 모였어요.`} />;
   }
   if (snapshot.phase === "role_reveal") return role === "student" ? <RoleRevealScreen /> : <IntermissionScreen title="역할을 확인하는 중" copy="학생들이 자신의 먹이 관계를 살펴보고 있어요." />;
   if (isActivePlayPhase(snapshot.phase)) return <GameScreen />;
@@ -38,9 +39,12 @@ function CurrentScreen(): JSX.Element {
 export default function App(): JSX.Element {
   const room = useGameStore((state) => state.room);
   const role = useGameStore((state) => state.role);
+  const phase = useGameStore((state) => state.snapshot.phase);
   const connecting = useGameStore((state) => state.connecting);
   const setConnecting = useGameStore((state) => state.setConnecting);
   const isGameTest = window.location.pathname === "/game-test";
+  const isTeacherLobby = role === "teacher" && (phase === "lobby" || phase === "mode_setup" || phase === "role_reveal");
+  const isTeacherResult = role === "teacher" && phase === "mode_result";
 
   useEffect(() => {
     if (!isGameTest && !room && sessionStorage.getItem("feed-chain-reconnection")) {
@@ -56,13 +60,13 @@ export default function App(): JSX.Element {
   if (!room) return <><LandingScreen />{connecting && <div className="reconnect-cover">생태계로 다시 연결 중…</div>}<RotateNotice /></>;
 
   return (
-    <div className={`app-shell ${role === "teacher" ? "teacher-mode" : "student-mode"}`}>
-      <div className="screen-slot">
+    <div className={`app-shell ${role === "teacher" ? "teacher-mode" : "student-mode"} ${isTeacherResult ? "result-fullscreen" : ""}`}>
+      <div className={isTeacherLobby ? "teacher-lobby-slot" : "screen-slot"}>
         <Suspense fallback={<IntermissionScreen title="생태계를 펼치는 중" copy="곧 탐험이 시작돼요." />}>
-          <CurrentScreen />
+          {isTeacherLobby ? <TeacherLobbyScreen /> : <CurrentScreen />}
         </Suspense>
       </div>
-      {role === "teacher" && <TeacherPanel />}
+      {role === "teacher" && !isTeacherLobby && !isTeacherResult && <TeacherPanel />}
       <NoticeToast />
       <RotateNotice />
     </div>

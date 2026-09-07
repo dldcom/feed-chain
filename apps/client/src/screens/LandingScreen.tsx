@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClass, joinClass } from "../network/gameClient";
 import { useGameStore } from "../store/gameStore";
 import { PixelSpeciesIcon } from "../components/PixelSpeciesIcon";
@@ -10,6 +10,14 @@ export function LandingScreen(): JSX.Element {
   const connecting = useGameStore((state) => state.connecting);
   const error = useGameStore((state) => state.error);
   const setError = useGameStore((state) => state.setError);
+
+  useEffect(() => {
+    const roomFromLink = new URLSearchParams(window.location.search).get("room");
+    if (roomFromLink) {
+      setRoomCode(roomFromLink.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6));
+      setMode("student");
+    }
+  }, []);
 
   const run = async (action: () => Promise<void>): Promise<void> => {
     try {

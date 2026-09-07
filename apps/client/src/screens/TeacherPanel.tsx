@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GAME_MODE_IDS, GAME_PHASES, PHASE_LABELS, PLAYABLE_SPECIES, SPECIES, isPlayableSpeciesId, modeConfig, type GameModeId, type SpeciesId } from "@feed-chain/shared";
+import { GAME_MODE_IDS, GAME_PHASES, MAX_STUDENT_COUNT, PHASE_LABELS, PLAYABLE_SPECIES, SPECIES, isPlayableSpeciesId, modeConfig, type GameModeId, type SpeciesId } from "@feed-chain/shared";
 import { downloadClassResult, leaveClass, sendTeacherCommand } from "../network/gameClient";
 import { useGameStore } from "../store/gameStore";
 import { PixelSpeciesIcon } from "../components/PixelSpeciesIcon";
@@ -23,7 +23,7 @@ export function TeacherPanel(): JSX.Element {
     <aside className="teacher-console">
       <div className="teacher-console-header">
         <div><small>수업 코드</small><strong>{snapshot.roomCode}</strong></div>
-        <span className="connection-pill">{connected}/23 연결</span>
+        <span className="connection-pill">{connected}/{MAX_STUDENT_COUNT} 연결</span>
       </div>
       <div className="phase-track">
         {GAME_PHASES.map((phase) => <i key={phase} className={phase === snapshot.phase ? "active" : ""} title={PHASE_LABELS[phase]} />)}
@@ -60,7 +60,7 @@ export function TeacherPanel(): JSX.Element {
 
       {modePickerVisible && (
         <section className="mode-picker">
-          <small>이번 수업 게임 선택</small>
+          <small>게임 모드 선택</small>
           <div className="mode-picker-grid">
             {GAME_MODE_IDS.map((modeId) => {
               const config = modeConfig(modeId);
@@ -69,10 +69,7 @@ export function TeacherPanel(): JSX.Element {
                   key={modeId}
                   className={selectedMode === modeId ? "active" : ""}
                   disabled={!snapshot.players.length}
-                  onClick={() => {
-                    setSelectedMode(modeId);
-                    if (modeId !== "web_removal") sendTeacherCommand({ action: "start_mode", modeId });
-                  }}
+                  onClick={() => setSelectedMode(modeId)}
                 >
                   <strong>{config.number}. {config.title}</strong>
                   <span>{Math.round(config.durationMs / 60000)}분 · {config.kind === "chain" ? "사슬" : "그물"}</span>
@@ -95,7 +92,10 @@ export function TeacherPanel(): JSX.Element {
               </button>
             </div>
           )}
-          {selectedMode !== "web_removal" && <p className="mode-picker-note">{selectedModeConfig.title}을(를) 선택하면 바로 시작합니다.</p>}
+          {selectedMode !== "web_removal" && <>
+            <p className="mode-picker-note">{selectedModeConfig.title}을(를) 준비합니다.</p>
+            <button className="mode-start-button" disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "start_mode", modeId: selectedMode })}>{selectedModeConfig.number}번 게임 시작</button>
+          </>}
         </section>
       )}
 
@@ -110,7 +110,7 @@ export function TeacherPanel(): JSX.Element {
       )}
 
       <div className="teacher-actions">
-        {canAssign && <button className="teacher-primary" disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "assign_roles" })}>자동 배정하고 공개</button>}
+        {canAssign && <button className="teacher-primary" disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "assign_roles" })}>자동 배정하기</button>}
         {canAssign && <button disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "reveal_roles" })}>현재 역할로 공개</button>}
         {snapshot.phase === "role_reveal" && <button className="teacher-primary" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "round_1" })}>기존 1판 시작</button>}
         {snapshot.phase === "role_reveal" && <button onClick={() => sendTeacherCommand({ action: "next_phase", phase: "mode_setup" })}>새 게임 모드 선택</button>}

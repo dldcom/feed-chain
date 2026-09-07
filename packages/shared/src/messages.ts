@@ -1,6 +1,6 @@
 import type { GamePhase } from "./phases.js";
 import type { GameModeId } from "./modes.js";
-import type { SpeciesId } from "./species.js";
+import type { PlayableSpeciesId, SkillKind, SpeciesId } from "./species.js";
 import type { SimulationResult } from "./simulation.js";
 
 export interface EatInput {
@@ -27,6 +27,31 @@ export interface TeacherCommand {
 export interface GameNotice {
   kind: "success" | "warning" | "info" | "skill";
   text: string;
+}
+
+/** Private role briefing sent only to the student who owns the role. */
+export interface RoleBriefing {
+  modeId: GameModeId | "";
+  modeNumber: number;
+  modeTitle: string;
+  species: PlayableSpeciesId;
+  foods: SpeciesId[];
+  predators: SpeciesId[];
+  skill: {
+    id: string;
+    name: string;
+    kind: SkillKind;
+    durationMs: number;
+    cooldownMs: number;
+  } | null;
+  revealEndsAt: number;
+}
+
+/** The teacher may see assignments before the students do. */
+export interface TeacherRoleAssignment {
+  playerId: string;
+  playerName: string;
+  species: PlayableSpeciesId;
 }
 
 export interface ActionEffect {
@@ -64,6 +89,13 @@ export interface ModeResult {
   modeNumber: number;
   removedSpecies: SpeciesId | "";
   durationMs: number;
+  /** Population totals for playable student roles only. */
+  playerPopulations: Partial<Record<SpeciesId, number>>;
+  /** Population totals for animal NPC entities. */
+  npcPopulations: Partial<Record<SpeciesId, number>>;
+  /** Population totals for active producer entities. */
+  plantPopulations: Partial<Record<SpeciesId, number>>;
+  /** Player + NPC + plant population totals. */
   finalPopulations: Partial<Record<SpeciesId, number>>;
   peakPopulations: Partial<Record<SpeciesId, number>>;
   timeline: ModeTimelinePoint[];

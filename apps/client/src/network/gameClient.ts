@@ -6,6 +6,8 @@ import { configureMovementNetcode, disposeMovementNetcode, movementLogicPose } f
 
 const endpoint = import.meta.env.VITE_SERVER_URL ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
 const client = new Client(endpoint);
+const visibleSpeciesByPlayer = new Map<string, string>();
+let visibleSpeciesModeInstanceId = 0;
 
 function randomCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -47,13 +49,15 @@ function serializeState(state: any): GameSnapshot {
     modeNumber: state.modeNumber ?? EMPTY_SNAPSHOT.modeNumber,
     modeTitle: state.modeTitle ?? EMPTY_SNAPSHOT.modeTitle,
     modeElapsedMs: state.modeElapsedMs ?? EMPTY_SNAPSHOT.modeElapsedMs,
+    modeInstanceId: state.modeInstanceId ?? EMPTY_SNAPSHOT.modeInstanceId,
+    roleRevealEndsAt: state.roleRevealEndsAt ?? EMPTY_SNAPSHOT.roleRevealEndsAt,
     removedSpecies: state.removedSpecies ?? EMPTY_SNAPSHOT.removedSpecies,
     expectedRelations: state.expectedRelations ?? EMPTY_SNAPSHOT.expectedRelations,
     experiment,
     players: collectionValues<PlayerSnapshot>(state.players, (player, key) => ({
       id: player.id || key,
       name: player.name,
-      species: player.species,
+      species: player.species || visibleSpeciesByPlayer.get(player.id || key) || "",
       x: player.x,
       y: player.y,
       facingX: player.facingX ?? 0,
@@ -129,6 +133,14 @@ function attachRoom(room: Room, role: "teacher" | "student"): void {
   store.setSession(room, role);
   let netcodeConfigured = false;
   const applyState = (state: any) => {
+    const modeInstanceId = Number(state.modeInstanceId ?? 0);
+    // Do not carry the previous mode's public role map into a new private
+    // briefing window. It is repopulated only by the next public_species
+    // message after the ten-second reveal.
+    if (modeInstanceId !== visibleSpeciesModeInstanceId) {
+      visibleSpeciesByPlayer.clear();
+      visibleSpeciesModeInstanceId = modeInstanceId;
+    }
     useGameStore.getState().setSnapshot(serializeState(state));
     const ready = typeof state.phase === "string" && (role === "teacher" || state.players?.get(room.sessionId));
     if (!netcodeConfigured && ready) {
@@ -136,6 +148,17 @@ function attachRoom(room: Room, role: "teacher" | "student"): void {
       netcodeConfigured = true;
     }
   };
+  room.onMessage("role_briefing", (briefing) => useGameStore.getState().setRoleBriefing(briefing));
+  room.onMessage("teacher_roles", (assignments) => useGameStore.getState().setTeacherAssignments(assignments));
+  room.onMessage("role_reveal_finished", () => useGameStore.getState().setRoleBriefing(null));
+  room.onMessage("public_species", (payload: { modeInstanceId?: number; species?: Record<string, string> }) => {
+    if (Number.isFinite(payload?.modeInstanceId)) visibleSpeciesModeInstanceId = Number(payload.modeInstanceId);
+    if (payload?.species) {
+      Object.entries(payload.species).forEach(([playerId, species]) => visibleSpeciesByPlayer.set(playerId, species));
+      useGameStore.getState().setSnapshot(serializeState(room.state));
+    }
+  });
+
   room.onStateChange(applyState);
   applyState(room.state);
   sessionStorage.setItem("feed-chain-reconnection", room.reconnectionToken);
@@ -165,6 +188,8 @@ function attachRoom(room: Room, role: "teacher" | "student"): void {
 
 export async function createClass(nickname: string): Promise<void> {
   useGameStore.getState().setConnecting(true);
+  visibleSpeciesByPlayer.clear();
+  visibleSpeciesModeInstanceId = 0;
   const teacherToken = crypto.randomUUID();
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
@@ -185,6 +210,8 @@ export async function createClass(nickname: string): Promise<void> {
 
 export async function joinClass(roomCode: string, nickname: string): Promise<void> {
   useGameStore.getState().setConnecting(true);
+  visibleSpeciesByPlayer.clear();
+  visibleSpeciesModeInstanceId = 0;
   const room = await client.joinById(roomCode.trim().toUpperCase(), { nickname });
   attachRoom(room, "student");
 }
@@ -215,7 +242,7 @@ export function eatNearest(): void {
     : null;
   const activeSpecies = configuredMode ? new Set<string>(configuredMode.activeSpecies) : null;
   const candidates = [
-    ...snapshot.players.filter((player) => player.id !== selfId && player.status === "active" && (!activeSpecies || activeSpecies.has(player.species))),
+    ...snapshot.players.filter((player) => player.id !== selfId && player.connected && player.status === "active" && (!activeSpecies || activeSpecies.has(player.species))),
     ...snapshot.plants.filter((plant) => plant.active && (!activeSpecies || activeSpecies.has(plant.species))),
     ...snapshot.animals.filter((animal) => animal.status === "active" && !animal.extinct && (!activeSpecies || activeSpecies.has(animal.species))),
   ];
@@ -245,6 +272,7 @@ export function downloadClassResult(): void {
 export async function leaveClass(): Promise<void> {
   disposeMovementNetcode();
   await useGameStore.getState().room?.leave(true);
+  visibleSpeciesByPlayer.clear();
   sessionStorage.removeItem("feed-chain-reconnection");
   sessionStorage.removeItem("feed-chain-role");
   useGameStore.getState().reset();

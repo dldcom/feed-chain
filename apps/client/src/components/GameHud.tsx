@@ -72,7 +72,14 @@ export function GameHud({ testState }: { testState?: GameHudTestState } = {}): J
   const hunger = Math.max(0, Math.min(100, testState?.hunger ?? player?.hunger ?? 100));
   const hungerSegments = Math.ceil(hunger / 20);
   const hungerState = hunger <= 30 ? "low" : hunger <= 60 ? "mid" : "good";
-  const cooldownStyle = (ratio: number) => ({ "--cooldown-angle": `${Math.max(0, Math.min(1, ratio)) * 360}deg` } as CSSProperties);
+  const cooldownStyle = (remainingMs: number, totalMs: number) => {
+    const ratio = Math.max(0, Math.min(1, remainingMs / Math.max(1, totalMs)));
+    return {
+      // The gold sector represents the time still locked; it shrinks in
+      // discrete-looking steps as the action charges back up.
+      "--cooldown-angle": `${ratio * 360}deg`,
+    } as CSSProperties;
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 200);
@@ -127,11 +134,28 @@ export function GameHud({ testState }: { testState?: GameHudTestState } = {}): J
       <VirtualJoystick onInput={testState?.onInput} />
 
       <div className="action-buttons">
-        <button className="action-button skill-button" aria-label={`스킬: ${skillName}`} title={skillName} style={cooldownStyle(skillRemaining / skillCooldown)} onPointerDown={(event) => { event.preventDefault(); testState ? testState.onSkill() : useSkill(); }} disabled={skillRemaining > 0 || !active}>
+        <button
+          className="action-button skill-button"
+          aria-label={skillRemaining > 0 ? `스킬: ${skillName}, ${Math.ceil(skillRemaining / 1000)}초 남음` : `스킬: ${skillName}`}
+          title={skillName}
+          data-cooldown={skillRemaining > 0 ? "active" : "ready"}
+          style={cooldownStyle(skillRemaining, skillCooldown)}
+          onPointerDown={(event) => { event.preventDefault(); testState ? testState.onSkill() : useSkill(); }}
+          disabled={skillRemaining > 0 || !active}
+        >
           {skillRemaining > 0 && <i className="cooldown-sweep" />}
           <strong className="action-key">B</strong>
+          {skillRemaining > 0 && <span className="cooldown-count" aria-hidden="true">{Math.ceil(skillRemaining / 1000)}</span>}
         </button>
-        <button className="action-button eat-button" aria-label="먹기" title="먹기" style={cooldownStyle(eatRemaining / EAT_COOLDOWN_MS)} onPointerDown={(event) => { event.preventDefault(); testState ? testState.onEat() : eatNearest(); }} disabled={!active || wrongRemaining > 0 || eatRemaining > 0}>
+        <button
+          className="action-button eat-button"
+          aria-label={eatRemaining > 0 ? `먹기, ${Math.ceil(eatRemaining / 1000)}초 남음` : "먹기"}
+          title="먹기"
+          data-cooldown={eatRemaining > 0 ? "active" : "ready"}
+          style={cooldownStyle(eatRemaining, EAT_COOLDOWN_MS)}
+          onPointerDown={(event) => { event.preventDefault(); testState ? testState.onEat() : eatNearest(); }}
+          disabled={!active || wrongRemaining > 0 || eatRemaining > 0}
+        >
           {eatRemaining > 0 && <i className="cooldown-sweep" />}
           <strong className="action-key">A</strong>
         </button>

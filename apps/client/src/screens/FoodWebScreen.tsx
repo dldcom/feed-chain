@@ -205,7 +205,7 @@ export function FoodWebScreen(): JSX.Element {
         </div>
       </header>
       <div className="view-switch">
-        <button className={view === "individual" ? "active" : ""} onClick={() => setView("individual")}>우리 반 23개체</button>
+        <button className={view === "individual" ? "active" : ""} onClick={() => setView("individual")}>우리 반 {snapshot.players.length}개체</button>
         <button className={view === "species" ? "active" : ""} onClick={() => setView("species")}>생물 종류별 보기</button>
       </div>
       {view === "individual" ? <IndividualGraph /> : <SpeciesGraph />}

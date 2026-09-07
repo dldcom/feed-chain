@@ -56,7 +56,6 @@ interface PlayerVisual {
   label: Phaser.GameObjects.Text;
   population: Phaser.GameObjects.Text;
   status: Phaser.GameObjects.Text;
-  direction: Phaser.GameObjects.Triangle;
   targetX: number;
   targetY: number;
   speciesId: string;
@@ -67,9 +66,13 @@ interface PlayerVisual {
 interface AnimalVisual {
   container: Phaser.GameObjects.Container;
   emoji: Phaser.GameObjects.Image;
+  speciesSprite: Phaser.GameObjects.Sprite;
   population: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
+  speciesId: string;
+  facingX: number;
+  facingY: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -247,10 +250,9 @@ export class GameScene extends Phaser.Scene {
           padding: { x: 5, y: 2 },
         }).setOrigin(0.5);
         const status = this.add.text(0, -88, "", { fontFamily: "Mona12, sans-serif", fontSize: "10px", color: "#fff8d8", stroke: "#173d2c", strokeThickness: 3 }).setOrigin(0.5);
-        const direction = this.add.triangle(0, 34, 0, -8, -6, 7, 6, 7, 0xffed82, 0.95).setStrokeStyle(2, 0x173d2c);
-        const container = this.add.container(renderPosition.x, renderPosition.y, [direction, emoji, speciesSprite, label, population, status]).setDepth(player.id === selfId ? 20 : 10);
+        const container = this.add.container(renderPosition.x, renderPosition.y, [emoji, speciesSprite, label, population, status]).setDepth(player.id === selfId ? 20 : 10);
         visual = {
-          container, emoji, speciesSprite, label, population, status, direction,
+          container, emoji, speciesSprite, label, population, status,
           targetX: renderPosition.x, targetY: renderPosition.y,
           speciesId: player.species, speciesAction: null,
         };
@@ -263,8 +265,6 @@ export class GameScene extends Phaser.Scene {
       visual.label.setText(player.name);
       visual.population.setText(`X${Math.max(0, player.populationCount)}`);
       this.updatePlayerSpeciesVisual(visual, player.species, renderPosition.facingX, renderPosition.facingY, moving);
-      const facingAngle = Math.atan2(renderPosition.facingY, renderPosition.facingX);
-      visual.direction.setPosition(Math.cos(facingAngle) * 36, Math.sin(facingAngle) * 36).setRotation(facingAngle + Math.PI / 2);
       visual.container.setAlpha(player.status === "ghost" || player.status === "respawning" ? 0.45 : player.status === "extinct" ? 0.2 : player.stealth ? 0.25 : 1);
       visual.container.setScale(player.shielded ? 0.82 : 1);
       visual.container.setVisible(
@@ -316,19 +316,72 @@ export class GameScene extends Phaser.Scene {
       if (!visual) {
         const emoji = this.add.image(0, -1, "species-atlas");
         this.setSpeciesSprite(emoji, animal.species, 44);
-        const population = this.add.text(0, -43, "X1", { fontFamily: "Mona12, sans-serif", fontSize: "10px", color: "#fff2a4", backgroundColor: "#173d2de8", padding: { x: 4, y: 2 } }).setOrigin(0.5);
-        const container = this.add.container(animal.x, animal.y, [emoji, population]).setDepth(8);
-        visual = { container, emoji, population, targetX: animal.x, targetY: animal.y };
+        const spriteSpecies = isSpriteSpecies(animal.species) ? animal.species : null;
+        const speciesSprite = this.add
+          .sprite(
+            0,
+            spriteSpecies ? speciesSpriteY(spriteSpecies, -18) : -18,
+            movementTextureKey(spriteSpecies ?? "rabbit"),
+            movementFrame(0, 1),
+          )
+          .setScale(spriteSpecies ? speciesSpriteScale(spriteSpecies) : 0)
+          .setVisible(Boolean(spriteSpecies));
+        emoji.setVisible(!spriteSpecies);
+        const population = this.add.text(0, spriteSpecies ? -58 : -43, "X1", { fontFamily: "Mona12, sans-serif", fontSize: "10px", color: "#fff2a4", backgroundColor: "#173d2de8", padding: { x: 4, y: 2 } }).setOrigin(0.5);
+        const container = this.add.container(animal.x, animal.y, [emoji, speciesSprite, population]).setDepth(8);
+        visual = {
+          container,
+          emoji,
+          speciesSprite,
+          population,
+          targetX: animal.x,
+          targetY: animal.y,
+          speciesId: animal.species,
+          facingX: 0,
+          facingY: 1,
+        };
         this.animals.set(animal.id, visual);
+      }
+      const previousX = visual.targetX;
+      const previousY = visual.targetY;
+      const deltaX = animal.x - previousX;
+      const deltaY = animal.y - previousY;
+      if (Math.abs(deltaX) + Math.abs(deltaY) > 0.05) {
+        visual.facingX = deltaX;
+        visual.facingY = deltaY;
       }
       visual.targetX = animal.x;
       visual.targetY = animal.y;
+      this.updateAnimalSpeciesVisual(visual, animal.species, Math.hypot(deltaX, deltaY) > 0.05);
+      visual.population.setY(isSpriteSpecies(animal.species) ? -58 : -43);
       visual.population.setText(`X${Math.max(0, animal.populationCount)}`);
       visual.container.setAlpha(animal.status === "ghost" || animal.status === "respawning" ? 0.45 : animal.extinct ? 0.2 : 1);
       visual.container.setVisible(canSeeThroughCover(viewerX, viewerY, animal.x, animal.y));
       visual.container.x = Phaser.Math.Linear(visual.container.x, visual.targetX, 0.35);
       visual.container.y = Phaser.Math.Linear(visual.container.y, visual.targetY, 0.35);
     });
+  }
+
+  private updateAnimalSpeciesVisual(visual: AnimalVisual, speciesId: string, moving: boolean): void {
+    if (visual.speciesId !== speciesId) {
+      visual.speciesId = speciesId;
+      const spriteSpecies = isSpriteSpecies(speciesId) ? speciesId : null;
+      visual.emoji.setVisible(!spriteSpecies);
+      visual.speciesSprite.setVisible(Boolean(spriteSpecies));
+      if (spriteSpecies) {
+        visual.speciesSprite.setScale(speciesSpriteScale(spriteSpecies));
+      } else {
+        this.setSpeciesSprite(visual.emoji, speciesId, 44);
+      }
+    }
+
+    const spriteSpecies = isSpriteSpecies(speciesId) ? speciesId : null;
+    if (!spriteSpecies) return;
+    const phase = moving ? Math.floor(this.time.now / 110) % 4 : 0;
+    const hover = isFlyingSpriteSpecies(spriteSpecies) ? Math.sin(this.time.now / 170) * 2 : 0;
+    visual.speciesSprite
+      .setPosition(0, speciesSpriteY(spriteSpecies, -18) + hover)
+      .setTexture(movementTextureKey(spriteSpecies), movementFrame(visual.facingX, visual.facingY, phase));
   }
 
   private syncEatTarget(
@@ -354,7 +407,9 @@ export class GameScene extends Phaser.Scene {
       : null;
     const activeSpecies: Set<string> | null = configuredMode ? new Set<string>(configuredMode.activeSpecies) : null;
     const candidates = [
-      ...players.filter((player) => player.id !== selfId && player.status === "active" && (!activeSpecies || activeSpecies.has(player.species)) && canSeeThroughCover(viewerX, viewerY, player.x, player.y)),
+      // A dropped player remains in the authoritative state for reconnection,
+      // but must not be presented as an eat target while disconnected.
+      ...players.filter((player) => player.id !== selfId && player.connected && player.status === "active" && (!activeSpecies || activeSpecies.has(player.species)) && canSeeThroughCover(viewerX, viewerY, player.x, player.y)),
       ...plants.filter((plant) => plant.active && (!activeSpecies || activeSpecies.has(plant.species))),
       ...animals.filter((animal) => animal.status === "active" && !animal.extinct && (!activeSpecies || activeSpecies.has(animal.species)) && canSeeThroughCover(viewerX, viewerY, animal.x, animal.y)),
     ].map((target) => ({ target, distance: Math.hypot(target.x - pose.x, target.y - pose.y) }))
