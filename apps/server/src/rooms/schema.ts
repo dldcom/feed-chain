@@ -95,6 +95,9 @@ export class GameState extends Schema {
   @type("number") modeElapsedMs = 0;
   @type("number") modeInstanceId = 0;
   @type("number") roleRevealEndsAt = 0;
+  /** Current mode 4 question (-1 while the quiz is not open). */
+  @type("number") quizQuestionIndex = -1;
+  @type("boolean") quizRevealed = false;
   @type("string") removedSpecies = "";
   @type("string") experimentJson = "";
   @type("string") modeResultJson = "";

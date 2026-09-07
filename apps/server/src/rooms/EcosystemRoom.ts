@@ -31,6 +31,12 @@ import {
   roundedScore,
   scoreForRelation,
   simulateEcosystem,
+  MODE4_QUIZ_QUESTIONS,
+  MODE4_REFLECTION_MIN_LENGTH,
+  type QuizAnswerInput,
+  type ReflectionSubmitInput,
+  type QuizProgress,
+  type ReflectionProgress,
   type BlueEdgeInput,
   type EatInput,
   type GamePhase,
@@ -62,6 +68,7 @@ const HUNGER_PER_SECOND = 0.9;
 const CATERPILLAR_ESCAPE_MS = 1500;
 const CATERPILLAR_ESCAPE_SPEED = 1.3;
 const MODE_TIMELINE_INTERVAL_MS = 5000;
+const REVIEW_RECONNECT_WINDOW_MS = 60 * 60 * 1000;
 
 export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> {
   maxClients = MAX_STUDENT_COUNT + 1;
@@ -105,6 +112,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   private roomExpiryTimer?: ReturnType<typeof setTimeout>;
   private roomExpired = false;
   private roleRevealTimer?: ReturnType<typeof setTimeout>;
+  private quizAnswers = new Map<string, number>();
+  private quizAnswerHistory = new Map<string, Map<number, number>>();
+  private reflectionNotes = new Map<string, string>();
 
   onCreate(options: RoomOptions): void {
     const requestedCode = (options.roomCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
@@ -121,6 +131,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.modeElapsedMs = 0;
     this.state.modeInstanceId = 0;
     this.state.roleRevealEndsAt = 0;
+    this.state.quizQuestionIndex = -1;
+    this.state.quizRevealed = false;
     this.state.modeResultJson = "";
     this.roomExpiresAt = Date.now() + CLASS_TTL_MS;
     this.roomExpiryTimer = setTimeout(() => this.expireRoom(), CLASS_TTL_MS);
@@ -134,6 +146,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.onMessage("blue_edge", (client, input: BlueEdgeInput) => this.handleBlueEdge(client, input));
     this.onMessage("teacher", (client, command: TeacherCommand) => this.handleTeacherCommand(client, command));
     this.onMessage("download_result", (client) => this.sendResult(client));
+    this.onMessage("quiz_answer", (client, input: QuizAnswerInput) => this.handleQuizAnswer(client, input));
+    this.onMessage("reflection_submit", (client, input: ReflectionSubmitInput) => this.handleReflectionSubmit(client, input));
 
     this.setFixedTimestep((ctx) => this.updateWorld(ctx.dt * 1000, ctx.dt), 30);
   }
@@ -150,6 +164,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       }
       this.teacherSessionId = client.sessionId;
       client.send("teacher_ready", { roomCode: this.state.roomCode });
+      if (this.state.phase === "mode4_quiz") this.sendQuizProgress(client);
+      if (this.state.phase === "mode4_reflection" || this.state.phase === "lesson_complete") this.sendReflectionProgress(client);
       return;
     }
 
@@ -182,6 +198,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     else this.lifeStartedAt.delete(client.sessionId);
     this.refreshPopulationState();
     this.sendTeacherRoleAssignments();
+    if (this.state.phase === "mode4_quiz") this.sendQuizProgress();
+    if (this.state.phase === "mode4_reflection") this.sendReflectionProgress();
+    if (this.state.phase === "mode4_quiz") this.sendCurrentQuizReveal(client);
     this.broadcast("notice", { kind: "info", text: `${player.name} 탐험가가 들어왔어요!` });
   }
 
@@ -226,10 +245,17 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       this.disconnectedModeInstance.delete(client.sessionId);
       if (this.state.phase === "role_reveal") this.sendRoleBriefing(client, player);
       else if (isActivePlayPhase(this.state.phase as GamePhase)) this.sendPublicSpecies(client);
+      else if (this.state.phase === "mode4_quiz") {
+        client.send("quiz_answer_saved", { questionIndex: this.state.quizQuestionIndex, optionIndex: this.quizAnswers.get(player.id) ?? -1 });
+        this.sendCurrentQuizReveal(client);
+      }
+      else if (this.state.phase === "mode4_reflection") client.send("reflection_saved", { submitted: this.reflectionNotes.has(player.id), text: this.reflectionNotes.get(player.id) ?? "" });
       return;
     }
     if (this.teacherSessionId === client.sessionId) {
       this.sendTeacherRoleAssignments(client);
+      if (this.state.phase === "mode4_quiz") this.sendQuizProgress(client);
+      if (this.state.phase === "mode4_reflection" || this.state.phase === "lesson_complete") this.sendReflectionProgress(client);
       return;
     }
     client.leave(4003, "이 게임의 재접속 시간이 끝났습니다.");
@@ -247,7 +273,12 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.disconnectedAt.delete(client.sessionId);
     this.disconnectedModeInstance.delete(client.sessionId);
     this.lastCompletedRoleAssignments.delete(client.sessionId);
+    this.quizAnswers.delete(client.sessionId);
+    this.quizAnswerHistory.delete(client.sessionId);
+    this.reflectionNotes.delete(client.sessionId);
     this.refreshPopulationState();
+    if (this.state.phase === "mode4_quiz") this.sendQuizProgress();
+    if (this.state.phase === "mode4_reflection") this.sendReflectionProgress();
   }
 
   onDispose(): void {
@@ -261,6 +292,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.lifeStartedAt.clear();
     this.mealsSinceBirth.clear();
     this.npcWander.clear();
+    this.quizAnswers.clear();
+    this.quizAnswerHistory.clear();
+    this.reflectionNotes.clear();
   }
 
   private expireRoom(): void {
@@ -274,6 +308,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
 
   private reconnectionSeconds(now: number, isPlayer: boolean): number {
     if (this.roomExpired) return 0;
+    if (isPlayer && this.reconnectEnabled && (this.state.phase === "mode4_quiz" || this.state.phase === "mode4_reflection") && this.modeEndsAt > now) {
+      return Math.max(1, Math.ceil((this.modeEndsAt - now) / 1000));
+    }
     if (isPlayer && this.reconnectEnabled && this.modeEndsAt > now) {
       return Math.max(1, Math.ceil((this.modeEndsAt - now) / 1000));
     }
@@ -715,6 +752,83 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.broadcast("notice", { kind: "success", text: "먹이그물에 파란 관계선이 추가됐어요!" });
   }
 
+  private handleQuizAnswer(client: Client, input: QuizAnswerInput): void {
+    if (this.state.phase !== "mode4_quiz" || this.state.quizRevealed) return;
+    const player = this.state.players.get(client.sessionId);
+    const question = MODE4_QUIZ_QUESTIONS[this.state.quizQuestionIndex];
+    if (!player || !player.connected || !question) return;
+    if (input?.questionId !== question.id || !Number.isInteger(input.optionIndex) || input.optionIndex < 0 || input.optionIndex >= question.options.length) return;
+
+    this.quizAnswers.set(client.sessionId, input.optionIndex);
+    const history = this.quizAnswerHistory.get(client.sessionId) ?? new Map<number, number>();
+    history.set(this.state.quizQuestionIndex, input.optionIndex);
+    this.quizAnswerHistory.set(client.sessionId, history);
+    client.send("quiz_answer_saved", { questionIndex: this.state.quizQuestionIndex, optionIndex: input.optionIndex });
+    this.sendQuizProgress();
+  }
+
+  private handleReflectionSubmit(client: Client, input: ReflectionSubmitInput): void {
+    if (this.state.phase !== "mode4_reflection") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !player.connected) return;
+    const text = typeof input?.text === "string" ? input.text.replace(/[<>]/g, "").trim().slice(0, 500) : "";
+    if (text.replace(/\s/g, "").length < MODE4_REFLECTION_MIN_LENGTH) {
+      client.send("notice", { kind: "warning", text: `조금 더 써 보세요. ${MODE4_REFLECTION_MIN_LENGTH}자 이상 필요해요.` });
+      client.send("reflection_saved", { submitted: false, text });
+      return;
+    }
+    this.reflectionNotes.set(client.sessionId, text);
+    client.send("reflection_saved", { submitted: true, text });
+    this.sendReflectionProgress();
+  }
+
+  private teacherClient(): Client | undefined {
+    return this.clients.find((entry) => entry.sessionId === this.teacherSessionId);
+  }
+
+  private sendQuizProgress(client = this.teacherClient()): void {
+    if (!client) return;
+    const answers = [...this.state.players.values()].map((player) => ({
+      playerId: player.id,
+      playerName: player.name,
+      optionIndex: this.quizAnswers.get(player.id) ?? null,
+    }));
+    const progress: QuizProgress = {
+      questionIndex: this.state.quizQuestionIndex,
+      submittedCount: answers.filter((answer) => answer.optionIndex !== null).length,
+      total: answers.length,
+      answers,
+    };
+    client.send("quiz_progress", progress);
+  }
+
+  private sendCurrentQuizReveal(client: Client): void {
+    if (this.state.phase !== "mode4_quiz" || !this.state.quizRevealed) return;
+    const question = MODE4_QUIZ_QUESTIONS[this.state.quizQuestionIndex];
+    if (!question) return;
+    client.send("quiz_revealed", {
+      questionIndex: this.state.quizQuestionIndex,
+      correctOption: question.correctOption,
+      explanation: question.explanation,
+    });
+  }
+
+  private sendReflectionProgress(client = this.teacherClient()): void {
+    if (!client) return;
+    const entries = [...this.state.players.values()].map((player) => ({
+      playerId: player.id,
+      playerName: player.name,
+      text: this.reflectionNotes.get(player.id) ?? "",
+      submitted: this.reflectionNotes.has(player.id),
+    }));
+    const progress: ReflectionProgress = {
+      submittedCount: entries.filter((entry) => entry.submitted).length,
+      total: entries.length,
+      entries,
+    };
+    client.send("reflection_progress", progress);
+  }
+
   private handleTeacherCommand(client: Client, command: TeacherCommand): void {
     if (client.sessionId !== this.teacherSessionId) return;
     switch (command.action) {
@@ -741,6 +855,34 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
         break;
       case "next_phase":
         this.transitionTo(command.phase ?? nextPhase(this.state.phase as GamePhase));
+        break;
+      case "quiz_reveal": {
+        if (this.state.phase !== "mode4_quiz" || this.state.quizRevealed) break;
+        const question = MODE4_QUIZ_QUESTIONS[this.state.quizQuestionIndex];
+        if (!question) break;
+        this.state.quizRevealed = true;
+        this.broadcast("quiz_revealed", {
+          questionIndex: this.state.quizQuestionIndex,
+          correctOption: question.correctOption,
+          explanation: question.explanation,
+        });
+        this.sendQuizProgress();
+        break;
+      }
+      case "quiz_next": {
+        if (this.state.phase !== "mode4_quiz" || !this.state.quizRevealed) break;
+        if (this.state.quizQuestionIndex < MODE4_QUIZ_QUESTIONS.length - 1) {
+          this.state.quizQuestionIndex += 1;
+          this.state.quizRevealed = false;
+          this.quizAnswers.clear();
+          this.sendQuizProgress();
+        } else {
+          this.transitionTo("mode4_reflection");
+        }
+        break;
+      }
+      case "reflection_finish":
+        if (this.state.phase === "mode4_reflection") this.transitionTo("lesson_complete");
         break;
       case "pause":
         if (!this.state.paused) this.pausedAt = Date.now();
@@ -937,6 +1079,11 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.nextTimelineAt = MODE_TIMELINE_INTERVAL_MS;
     this.state.modeElapsedMs = 0;
     this.state.modeResultJson = "";
+    this.state.quizQuestionIndex = -1;
+    this.state.quizRevealed = false;
+    this.quizAnswers.clear();
+    this.quizAnswerHistory.clear();
+    this.reflectionNotes.clear();
     this.state.expectedRelations = mode.relations.length;
 
     let index = 0;
@@ -1166,6 +1313,37 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       this.reconnectEnabled = false;
       this.modeEndsAt = 0;
       this.pausedAt = 0;
+      this.state.quizQuestionIndex = -1;
+      this.state.quizRevealed = false;
+      this.quizAnswers.clear();
+      this.reflectionNotes.clear();
+    } else if (phase === "mode4_quiz") {
+      if (this.state.modeId !== "web_removal" || !this.state.modeResultJson) return;
+      this.state.timeRemainingMs = 0;
+      this.state.quizQuestionIndex = 0;
+      this.state.quizRevealed = false;
+      this.quizAnswers.clear();
+      this.quizAnswerHistory.clear();
+      this.reflectionNotes.clear();
+      this.reconnectEnabled = true;
+      this.modeEndsAt = Date.now() + REVIEW_RECONNECT_WINDOW_MS;
+      this.pausedAt = 0;
+      this.sendQuizProgress();
+    } else if (phase === "mode4_reflection") {
+      if (this.state.modeId !== "web_removal" || !this.state.modeResultJson) return;
+      this.state.timeRemainingMs = 0;
+      this.state.quizRevealed = false;
+      this.quizAnswers.clear();
+      this.reconnectEnabled = true;
+      this.modeEndsAt = Date.now() + REVIEW_RECONNECT_WINDOW_MS;
+      this.pausedAt = 0;
+      this.sendReflectionProgress();
+    } else if (phase === "lesson_complete") {
+      this.state.timeRemainingMs = 0;
+      this.state.quizRevealed = false;
+      this.reconnectEnabled = false;
+      this.modeEndsAt = 0;
+      this.pausedAt = 0;
     } else {
       this.state.timeRemainingMs = 0;
       this.state.roleRevealEndsAt = 0;
@@ -1225,6 +1403,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.modeElapsedMs = 0;
     this.state.modeInstanceId = 0;
     this.state.roleRevealEndsAt = 0;
+    this.state.quizQuestionIndex = -1;
+    this.state.quizRevealed = false;
     this.state.removedSpecies = "";
     this.state.experimentJson = "";
     this.state.modeResultJson = "";
@@ -1236,6 +1416,9 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.populations.clear();
     this.mealsSinceBirth.clear();
     this.npcWander.clear();
+    this.quizAnswers.clear();
+    this.quizAnswerHistory.clear();
+    this.reflectionNotes.clear();
     this.state.players.forEach((player) => {
       player.score = 0;
       player.status = "active";
@@ -1596,6 +1779,10 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       mode: this.state.modeId || null,
       currentModeResult: this.state.modeResultJson ? JSON.parse(this.state.modeResultJson) : null,
       modeResults: [...this.completedModeResults],
+      mode4Review: {
+        answers: [...this.quizAnswerHistory.entries()].flatMap(([playerId, answers]) => [...answers.entries()].map(([questionIndex, optionIndex]) => ({ playerId, questionIndex, optionIndex }))),
+        reflections: [...this.reflectionNotes.entries()].map(([playerId, text]) => ({ playerId, text })),
+      },
       populations: [...this.state.populations.values()].map((population) => ({ species: population.species, count: population.count, peak: population.peak })),
     });
   }

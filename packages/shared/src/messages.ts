@@ -15,13 +15,64 @@ export interface BlueEdgeInput {
 }
 
 export interface TeacherCommand {
-  action: "assign_roles" | "reveal_roles" | "set_role" | "next_phase" | "pause" | "resume" | "reset" | "start_experiment" | "start_mode" | "adjust_time";
+  action: "assign_roles" | "reveal_roles" | "set_role" | "next_phase" | "pause" | "resume" | "reset" | "start_experiment" | "start_mode" | "adjust_time" | "quiz_reveal" | "quiz_next" | "reflection_finish";
   phase?: GamePhase;
   modeId?: GameModeId;
   removedSpecies?: SpeciesId;
   playerId?: string;
   species?: SpeciesId;
   deltaMs?: number;
+}
+
+export interface QuizAnswerInput {
+  questionId: string;
+  optionIndex: number;
+}
+
+export interface ReflectionSubmitInput {
+  text: string;
+}
+
+export interface QuizAnswerSaved {
+  questionIndex: number;
+  optionIndex: number;
+}
+
+export interface QuizProgressEntry {
+  playerId: string;
+  playerName: string;
+  optionIndex: number | null;
+}
+
+export interface QuizProgress {
+  questionIndex: number;
+  submittedCount: number;
+  total: number;
+  answers: QuizProgressEntry[];
+}
+
+export interface QuizReveal {
+  questionIndex: number;
+  correctOption: number;
+  explanation: string;
+}
+
+export interface ReflectionSaved {
+  submitted: boolean;
+  text: string;
+}
+
+export interface ReflectionProgressEntry {
+  playerId: string;
+  playerName: string;
+  text: string;
+  submitted: boolean;
+}
+
+export interface ReflectionProgress {
+  submittedCount: number;
+  total: number;
+  entries: ReflectionProgressEntry[];
 }
 
 export interface GameNotice {

@@ -1,5 +1,5 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { EAT_RANGE, isGameModeId, isWithinEatReach, modeConfig, isSpeciesId, type ActionEffect, type ExperimentComparison, type GameNotice, type ModeResult, type TeacherCommand } from "@feed-chain/shared";
+import { EAT_RANGE, isGameModeId, isWithinEatReach, modeConfig, isSpeciesId, type ActionEffect, type ExperimentComparison, type GameNotice, type ModeResult, type QuizAnswerSaved, type QuizProgress, type QuizReveal, type ReflectionProgress, type ReflectionSaved, type TeacherCommand } from "@feed-chain/shared";
 import { EMPTY_SNAPSHOT, type AnimalSnapshot, type GameSnapshot, type IndividualRelationSnapshot, type PlantSnapshot, type PlayerSnapshot, type PopulationSnapshot, type RelationSnapshot } from "../types";
 import { useGameStore } from "../store/gameStore";
 import { configureMovementNetcode, disposeMovementNetcode, movementLogicPose } from "./movementNetcode";
@@ -51,6 +51,8 @@ function serializeState(state: any): GameSnapshot {
     modeElapsedMs: state.modeElapsedMs ?? EMPTY_SNAPSHOT.modeElapsedMs,
     modeInstanceId: state.modeInstanceId ?? EMPTY_SNAPSHOT.modeInstanceId,
     roleRevealEndsAt: state.roleRevealEndsAt ?? EMPTY_SNAPSHOT.roleRevealEndsAt,
+    quizQuestionIndex: state.quizQuestionIndex ?? EMPTY_SNAPSHOT.quizQuestionIndex,
+    quizRevealed: state.quizRevealed ?? EMPTY_SNAPSHOT.quizRevealed,
     removedSpecies: state.removedSpecies ?? EMPTY_SNAPSHOT.removedSpecies,
     expectedRelations: state.expectedRelations ?? EMPTY_SNAPSHOT.expectedRelations,
     experiment,
@@ -174,6 +176,11 @@ function attachRoom(room: Room, role: "teacher" | "student"): void {
     const current = useGameStore.getState().snapshot;
     useGameStore.getState().setSnapshot({ ...current, modeResult: result });
   });
+  room.onMessage("quiz_answer_saved", (payload: QuizAnswerSaved) => useGameStore.getState().setQuizAnswer(payload));
+  room.onMessage("quiz_revealed", (payload: QuizReveal) => useGameStore.getState().setQuizReveal(payload));
+  room.onMessage("quiz_progress", (payload: QuizProgress) => useGameStore.getState().setQuizProgress(payload));
+  room.onMessage("reflection_saved", (payload: ReflectionSaved) => useGameStore.getState().setReflectionSaved(payload));
+  room.onMessage("reflection_progress", (payload: ReflectionProgress) => useGameStore.getState().setReflectionProgress(payload));
   room.onMessage("class_result", (result: unknown) => {
     const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -259,6 +266,14 @@ export function useSkill(): void {
 
 export function sendBlueEdge(prey: string, predator: string): void {
   useGameStore.getState().room?.send("blue_edge", { prey, predator });
+}
+
+export function sendQuizAnswer(questionId: string, optionIndex: number): void {
+  useGameStore.getState().room?.send("quiz_answer", { questionId, optionIndex });
+}
+
+export function sendReflection(text: string): void {
+  useGameStore.getState().room?.send("reflection_submit", { text });
 }
 
 export function sendTeacherCommand(command: TeacherCommand): void {

@@ -141,30 +141,28 @@ interface WebNodePoint {
   y: number;
 }
 
-interface WebTourStep {
-  node: SpeciesId;
-  edge?: { prey: SpeciesId; predator: SpeciesId };
-  chainIndex: number;
+interface WebTourEdge {
+  prey: SpeciesId;
+  predator: SpeciesId;
 }
 
-// A tour is made of short, readable food-chain paths. The same predator can
-// appear again later: that repetition is exactly what makes the web visible
-// when the paths are overlaid one by one.
-const WEB_TOUR_PATHS: readonly (readonly SpeciesId[])[] = [
-  ["clover", "caterpillar", "frog", "snake", "hawk"],
-  ["grass", "grasshopper", "frog", "hawk"],
-  ["berry", "bulbul", "weasel"],
-  ["acorn", "squirrel", "hawk"],
-  ["grass", "caterpillar", "frog", "duck", "weasel"],
-  ["clover", "grasshopper", "bulbul", "hawk"],
-  ["grass", "grasshopper", "duck", "hawk"],
-  ["grass", "rabbit", "weasel"],
-  ["clover", "rabbit", "hawk"],
-  ["berry", "squirrel", "weasel"],
-  ["grass", "grasshopper", "frog", "weasel"],
-  ["grass", "caterpillar", "bulbul", "weasel"],
-  ["grass", "caterpillar", "duck", "weasel"],
+interface WebTourStep {
+  node?: SpeciesId;
+  edges: readonly WebTourEdge[];
+  groupKey: string;
+}
+
+// Keep the guided part short enough for a classroom explanation. The teacher
+// introduces four complete food-chain sets, then reveals the complete web in
+// one overview step.
+const WEB_TOUR_CHAINS: readonly (readonly SpeciesId[])[] = [
+  ["clover", "grasshopper", "frog", "snake", "hawk"],
+  ["grass", "duck", "weasel"],
+  ["berry", "rabbit", "hawk"],
+  ["acorn", "squirrel", "weasel"],
 ];
+const WEB_TOUR_CHAIN_LIMIT = WEB_TOUR_CHAINS.length;
+const WEB_PRODUCER_ORDER: readonly SpeciesId[] = ["clover", "grass", "berry", "acorn"];
 
 const WEB_NODE_LAYOUT: Record<SpeciesId, WebNodePoint> = {
   grass: { x: 10, y: 79 },
@@ -189,42 +187,6 @@ function webTourRelationKey(prey: SpeciesId, predator: SpeciesId): string {
 
 function buildWebTour(config: ReturnType<typeof modeConfig>): WebTourStep[] {
   const active = new Set(config.activeSpecies);
-  const validEdges = new Set(config.relations.map((edge) => webTourRelationKey(edge.prey, edge.predator)));
-  const paths: SpeciesId[][] = [];
-  const coveredNodes = new Set<SpeciesId>();
-  const coveredEdges = new Set<string>();
-
-  const addPath = (path: readonly SpeciesId[]) => {
-    if (!path.length) return;
-    const normalized = path.filter((speciesId) => active.has(speciesId));
-    if (!normalized.length) return;
-    paths.push([...normalized]);
-    normalized.forEach((speciesId) => coveredNodes.add(speciesId));
-    for (let index = 1; index < normalized.length; index += 1) {
-      const prey = normalized[index - 1];
-      const predator = normalized[index];
-      if (prey && predator) coveredEdges.add(webTourRelationKey(prey, predator));
-    }
-  };
-
-  for (const candidate of WEB_TOUR_PATHS) {
-    if (!candidate.every((speciesId) => active.has(speciesId))) continue;
-    let valid = true;
-    for (let index = 1; index < candidate.length; index += 1) {
-      const prey = candidate[index - 1];
-      const predator = candidate[index];
-      if (!prey || !predator || !validEdges.has(webTourRelationKey(prey, predator))) {
-        valid = false;
-        break;
-      }
-    }
-    if (valid) addPath(candidate);
-  }
-
-  // If a species was removed, some of the authored routes disappear. Build
-  // all producer-to-terminal paths that still exist and greedily choose the
-  // ones that add the most unseen relations. Every selected route therefore
-  // still starts at a plant and climbs to an apex predator.
   const outgoing = new Map<SpeciesId, SpeciesId[]>();
   config.relations.forEach((edge) => {
     if (!active.has(edge.prey) || !active.has(edge.predator)) return;
@@ -232,66 +194,96 @@ function buildWebTour(config: ReturnType<typeof modeConfig>): WebTourStep[] {
     predators.push(edge.predator);
     outgoing.set(edge.prey, predators);
   });
-  const generatedPaths: SpeciesId[][] = [];
-  const collectPaths = (current: SpeciesId, path: SpeciesId[]) => {
-    const predators = outgoing.get(current) ?? [];
-    if (!predators.length) {
-      generatedPaths.push(path);
-      return;
-    }
-    predators.forEach((predator) => {
-      if (!path.includes(predator)) collectPaths(predator, [...path, predator]);
-    });
-  };
-  config.producerSpecies.forEach((producer) => {
-    if (active.has(producer)) collectPaths(producer, [producer]);
-  });
-  while (true) {
-    let best: SpeciesId[] | undefined;
-    let bestScore = 0;
-    generatedPaths.forEach((candidate) => {
-      let score = 0;
-      for (let index = 1; index < candidate.length; index += 1) {
-        const prey = candidate[index - 1];
-        const predator = candidate[index];
-        if (prey && predator && !coveredEdges.has(webTourRelationKey(prey, predator))) score += 1;
-      }
-      if (score > bestScore || (score === bestScore && score > 0 && best && candidate.length > best.length)) {
-        best = candidate;
-        bestScore = score;
-      }
-    });
-    if (!best || bestScore === 0) break;
-    addPath(best);
-    const selectedIndex = generatedPaths.indexOf(best);
-    if (selectedIndex >= 0) generatedPaths.splice(selectedIndex, 1);
-  }
+  const producers = [
+    ...WEB_PRODUCER_ORDER.filter((speciesId) => config.producerSpecies.includes(speciesId)),
+    ...config.producerSpecies.filter((speciesId) => !WEB_PRODUCER_ORDER.includes(speciesId)),
+  ].filter((speciesId) => active.has(speciesId));
 
-  // Every canonical relation gets its own short branch if it was not already
-  // covered by one of the longer teaching paths. This prevents the completed
-  // web from suddenly gaining edges that were never shown in the tour.
-  for (const edge of config.relations) {
-    const key = webTourRelationKey(edge.prey, edge.predator);
-    if (!active.has(edge.prey) || !active.has(edge.predator) || coveredEdges.has(key)) continue;
-    addPath([edge.prey, edge.predator]);
-  }
-
-  // A removed species can leave an otherwise isolated active node. Give it a
-  // final camera stop so the end state still accounts for every visible node.
-  for (const speciesId of config.activeSpecies) {
-    if (!coveredNodes.has(speciesId)) {
-      paths.push([speciesId]);
-      coveredNodes.add(speciesId);
-    }
-  }
-
-  const steps: WebTourStep[] = [];
-  paths.forEach((path, chainIndex) => {
-    path.forEach((node, index) => {
+  const validEdgeKeys = new Set(config.relations
+    .filter((edge) => active.has(edge.prey) && active.has(edge.predator))
+    .map((edge) => webTourRelationKey(edge.prey, edge.predator)));
+  const isValidPath = (path: readonly SpeciesId[]) => {
+    if (path.length < 2 || !path.every((speciesId) => active.has(speciesId))) return false;
+    for (let index = 1; index < path.length; index += 1) {
       const prey = path[index - 1];
-      steps.push(prey ? { node, edge: { prey, predator: node }, chainIndex } : { node, chainIndex });
-    });
+      const predator = path[index];
+      if (!prey || !predator || !validEdgeKeys.has(webTourRelationKey(prey, predator))) return false;
+    }
+    return true;
+  };
+
+  // Start with the four chains chosen for the lesson, in the exact order the
+  // teacher wants to explain them. A chain containing a removed species is
+  // skipped and replaced by a valid fallback path below.
+  const selectedPaths: SpeciesId[][] = [];
+  const selectedKeys = new Set<string>();
+  WEB_TOUR_CHAINS.forEach((path) => {
+    if (selectedPaths.length >= WEB_TOUR_CHAIN_LIMIT || !isValidPath(path)) return;
+    const key = path.join(">");
+    if (selectedKeys.has(key)) return;
+    selectedPaths.push([...path]);
+    selectedKeys.add(key);
   });
+
+  // If mode 4 removes one of the authored chains, generate complete paths
+  // from the remaining producers and use the longest unused ones as fallback.
+  if (selectedPaths.length < WEB_TOUR_CHAIN_LIMIT) {
+    const fallbackPaths: SpeciesId[][] = [];
+    const collectPaths = (current: SpeciesId, path: SpeciesId[], seen: Set<SpeciesId>) => {
+      const predators = (outgoing.get(current) ?? []).filter((predator) => !seen.has(predator));
+      if (!predators.length || path.length >= active.size) {
+        fallbackPaths.push(path);
+        return;
+      }
+      predators.forEach((predator) => {
+        const nextSeen = new Set(seen);
+        nextSeen.add(predator);
+        collectPaths(predator, [...path, predator], nextSeen);
+      });
+    };
+    producers.forEach((producer) => collectPaths(producer, [producer], new Set([producer])));
+    fallbackPaths
+      .slice()
+      .sort((a, b) => b.length - a.length)
+      .forEach((path) => {
+        if (selectedPaths.length >= WEB_TOUR_CHAIN_LIMIT) return;
+        const key = path.join(">");
+        if (selectedKeys.has(key)) return;
+        selectedPaths.push(path);
+        selectedKeys.add(key);
+      });
+  }
+
+  // Keep every new relation as a camera step. A predator can appear in more
+  // than one chain, but revisiting its node is useful for the class: the camera
+  // still lands on the weasel/hawk while the newly explained line is revealed.
+  const steps: WebTourStep[] = [];
+  const coveredNodes = new Set<SpeciesId>();
+  const coveredEdges = new Set<string>();
+  selectedPaths.forEach((path, chainIndex) => {
+    const groupPrefix = `web-chain-${chainIndex}`;
+    const firstNode = path[0];
+    if (!firstNode || !active.has(firstNode)) return;
+    if (!coveredNodes.has(firstNode)) {
+      steps.push({ node: firstNode, edges: [], groupKey: `${groupPrefix}-0` });
+      coveredNodes.add(firstNode);
+    }
+    for (let index = 1; index < path.length; index += 1) {
+      const prey = path[index - 1];
+      const predator = path[index];
+      if (!prey || !predator) continue;
+      const edgeKey = webTourRelationKey(prey, predator);
+      if (coveredEdges.has(edgeKey)) continue;
+      const edge = { prey, predator };
+      steps.push({ node: predator, edges: [edge], groupKey: `${groupPrefix}-${index}` });
+      coveredNodes.add(predator);
+      coveredEdges.add(edgeKey);
+    }
+  });
+
+  if (!steps.length && config.activeSpecies[0]) {
+    steps.push({ node: config.activeSpecies[0], edges: [], groupKey: "web-chain-0-0" });
+  }
   return steps;
 }
 
@@ -390,13 +382,17 @@ function ChainResultScene({
 }
 
 function WebResultScene({
-  result,
   config,
   onSelect,
+  result,
+  instant = false,
+  showPopulationBadges = false,
 }: {
-  result: ModeResult;
   config: ReturnType<typeof modeConfig>;
   onSelect: (speciesId: PlayableSpeciesId) => void;
+  result?: ModeResult;
+  instant?: boolean;
+  showPopulationBadges?: boolean;
 }): JSX.Element {
   const [revealedCount, setRevealedCount] = useState(0);
   const [opening, setOpening] = useState(true);
@@ -405,26 +401,36 @@ function WebResultScene({
   const [transitioning, setTransitioning] = useState(true);
   const transitionTimer = useRef<number | null>(null);
   const activeKey = config.activeSpecies.join("|");
+  const displaySpecies = useMemo(() => {
+    const ids = [...config.activeSpecies];
+    if (instant && result?.removedSpecies && isSpeciesId(result.removedSpecies) && !ids.includes(result.removedSpecies)) ids.push(result.removedSpecies);
+    return ids;
+  }, [activeKey, instant, result?.removedSpecies]);
   const tourSteps = useMemo(() => buildWebTour(config), [activeKey]);
   const points = useMemo(() => {
     const map = new Map<SpeciesId, WebNodePoint>();
-    config.activeSpecies.forEach((speciesId) => {
+    displaySpecies.forEach((speciesId) => {
       const point = WEB_NODE_LAYOUT[speciesId];
       if (point) map.set(speciesId, point);
     });
     return map;
-  }, [activeKey]);
-  const observed = useMemo(() => new Set(result.observedRelations.map((edge) => `${edge.prey}->${edge.predator}`)), [result]);
-  const revealedNodes = useMemo(() => new Set(tourSteps.slice(0, revealedCount).map((step) => step.node)), [tourSteps, revealedCount]);
-  const revealedEdges = useMemo(() => new Set(tourSteps.slice(0, revealedCount).flatMap((step) => step.edge ? [webTourRelationKey(step.edge.prey, step.edge.predator)] : [])), [tourSteps, revealedCount]);
-  const finished = tourSteps.length > 0 && tourComplete;
+  }, [displaySpecies]);
+  const finished = instant || (tourSteps.length > 0 && tourComplete);
+  const showFullWeb = instant || zoomOut || finished;
+  const revealedNodes = useMemo(() => showFullWeb
+    ? new Set(displaySpecies)
+    : new Set(tourSteps.slice(0, revealedCount).flatMap((step) => step.node ? [step.node] : [])), [displaySpecies, showFullWeb, tourSteps, revealedCount]);
+  const revealedEdges = useMemo(() => showFullWeb
+    ? new Set(config.relations.map((edge) => webTourRelationKey(edge.prey, edge.predator)))
+    : new Set(tourSteps.slice(0, revealedCount).flatMap((step) => step.edges.map((edge) => webTourRelationKey(edge.prey, edge.predator)))), [activeKey, config.relations, showFullWeb, tourSteps, revealedCount]);
   const playable = new Set(config.playableSpecies);
   const currentStep = tourSteps[Math.max(0, revealedCount - 1)];
   const nextStep = tourSteps[revealedCount];
-  const currentChainIndex = currentStep?.chainIndex;
-  const currentChainNodes = useMemo(() => new Set(tourSteps.filter((step) => step.chainIndex === currentChainIndex).map((step) => step.node)), [tourSteps, currentChainIndex]);
-  const currentChainEdges = useMemo(() => new Set(tourSteps.filter((step) => step.chainIndex === currentChainIndex && step.edge).map((step) => webTourRelationKey(step.edge!.prey, step.edge!.predator))), [tourSteps, currentChainIndex]);
-  const focusPoint = currentStep ? points.get(currentStep.node) : undefined;
+  const currentGroupKey = currentStep?.groupKey;
+  const currentGroupNodes = useMemo(() => new Set(tourSteps.filter((step) => step.groupKey === currentGroupKey).flatMap((step) => step.node ? [step.node] : [])), [tourSteps, currentGroupKey]);
+  const currentGroupEdges = useMemo(() => new Set(tourSteps.filter((step) => step.groupKey === currentGroupKey).flatMap((step) => step.edges.map((edge) => webTourRelationKey(edge.prey, edge.predator)))), [tourSteps, currentGroupKey]);
+  const focusNode = useMemo(() => [...tourSteps.slice(0, Math.max(1, revealedCount))].reverse().find((step) => step.node)?.node, [tourSteps, revealedCount]);
+  const focusPoint = focusNode ? points.get(focusNode) : undefined;
   const cameraStyle = useMemo(() => {
     if (!focusPoint || opening || zoomOut) return { transform: "translate3d(0, 0, 0) scale(1)" } as CSSProperties;
     const scale = 1.55;
@@ -465,38 +471,36 @@ function WebResultScene({
   };
 
   return (
-    <section className={`result-hero web-result-hero ${finished ? "complete" : ""}`}>
+    <section className={`result-hero web-result-hero ${finished ? "complete" : ""} ${instant ? "instant" : ""}`}>
       <div className="web-result-stage" aria-label="여러 먹이사슬이 그물처럼 얽힌 먹이그물">
         <div className="web-result-camera" style={cameraStyle}>
           <svg className="web-result-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <defs>
-              <marker id="web-result-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 z" /></marker>
-            </defs>
             {config.relations.map((edge) => {
               const from = points.get(edge.prey);
               const to = points.get(edge.predator);
               if (!from || !to) return null;
               const key = `${edge.prey}->${edge.predator}`;
               const visible = revealedEdges.has(key);
-              const currentPath = !zoomOut && visible && currentChainEdges.has(key);
-              return <line key={key} className={`web-result-edge ${visible ? "revealed" : ""} ${observed.has(key) ? "observed" : ""} ${currentPath ? "current-path" : ""}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} markerEnd="url(#web-result-arrow)" />;
+              const currentPath = !zoomOut && visible && currentGroupEdges.has(key);
+              return <line key={key} className={`web-result-edge ${visible ? "revealed" : ""} ${currentPath ? "current-path" : ""}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
             })}
           </svg>
           {[...points.entries()].map(([speciesId, point]) => {
             const visible = revealedNodes.has(speciesId);
             const interactive = finished && playable.has(speciesId as PlayableSpeciesId);
-            const currentPath = !zoomOut && visible && currentChainNodes.has(speciesId);
-            const nodeClass = `web-result-node ${visible ? "revealed" : ""} ${interactive ? "interactive" : ""} ${currentPath ? "current-path" : ""}`;
+            const currentPath = !zoomOut && visible && currentGroupNodes.has(speciesId);
+            const removed = result?.removedSpecies === speciesId;
+            const nodeClass = `web-result-node ${visible ? "revealed" : ""} ${interactive ? "interactive" : ""} ${currentPath ? "current-path" : ""} ${removed ? "removed-node" : ""}`;
             const nodeStyle = { left: `${point.x}%`, top: `${point.y}%` } as CSSProperties;
-            const content = <><span className="result-node-art"><PixelSpeciesIcon speciesId={speciesId} /></span><span className="result-node-name">{SPECIES[speciesId].name}</span></>;
+            const content = <><span className="result-node-art"><PixelSpeciesIcon speciesId={speciesId} /></span><span className="result-node-name">{SPECIES[speciesId].name}</span>{showPopulationBadges && result && <b className="result-population-badge">×{resultCount(result, speciesId)}</b>}</>;
             return interactive
               ? <button key={speciesId} type="button" className={nodeClass} style={nodeStyle} onClick={() => onSelect(speciesId as PlayableSpeciesId)} aria-label={`${SPECIES[speciesId].name} 탐험대 순위 보기`}>{content}</button>
               : <div key={speciesId} className={nodeClass} style={nodeStyle}>{content}</div>;
           })}
         </div>
       </div>
-      <div className="web-result-legend"><span><i className="observed-dot" />이번 수업에서 관찰한 관계</span><span><i className="known-dot" />교과서 먹이 관계</span><span>{result.observedRelations.length}개 관계 기록</span></div>
-      {!finished && <button type="button" className="result-next-step-button" disabled={transitioning} onClick={advanceWeb}>{zoomOut ? "전체 먹이그물을 펼치는 중…" : nextStep ? nextStep.edge ? `${SPECIES[nextStep.node].name}로 이동` : `${SPECIES[nextStep.node].name}에서 새 사슬 시작` : "전체 먹이그물 보기"}</button>}
+      <div className="web-result-legend"><span><i className="known-dot" />먹이 관계</span><span>{config.relations.length}개 관계</span></div>
+      {!finished && <button type="button" className="result-next-step-button" disabled={transitioning} onClick={advanceWeb}>{zoomOut ? "전체 먹이그물을 펼치는 중…" : nextStep ? nextStep.node ? nextStep.edges.length ? `${SPECIES[nextStep.node].name}로 이동` : `${SPECIES[nextStep.node].name}에서 새 사슬 시작` : "전체 먹이그물 보기" : "전체 먹이그물 보기"}</button>}
     </section>
   );
 }
@@ -524,14 +528,14 @@ function RankingModal({ result, speciesId, onClose }: { result: ModeResult; spec
   );
 }
 
-function ResultTeacherControls(): JSX.Element | null {
+function ResultTeacherControls({ mode4 = false }: { mode4?: boolean }): JSX.Element | null {
   const role = useGameStore((state) => state.role);
   if (role !== "teacher") return null;
   return (
     <aside className="result-teacher-controls">
       <div className="result-teacher-heading"><span>교사 메뉴</span><strong>다음 활동</strong></div>
-      <p className="result-teacher-copy">다음 게임의 모드와 역할을 다시 준비하세요.</p>
-      <button type="button" className="result-return-button" onClick={() => sendTeacherCommand({ action: "next_phase", phase: "mode_setup" })}>교사 화면으로 돌아가기</button>
+      <p className="result-teacher-copy">{mode4 ? "먹이그물 관찰을 마치고 함께 퀴즈를 풀어 보세요." : "다음 게임의 모드와 역할을 다시 준비하세요."}</p>
+      <button type="button" className="result-return-button" onClick={() => sendTeacherCommand({ action: "next_phase", phase: mode4 ? "mode4_quiz" : "mode_setup" })}>{mode4 ? "퀴즈 시작" : "교사 화면으로 돌아가기"}</button>
       <div className="result-teacher-secondary"><button type="button" onClick={downloadClassResult}>기록 저장</button><button type="button" onClick={() => void leaveClass()}>나가기</button></div>
     </aside>
   );
@@ -555,6 +559,7 @@ export function ModeResultScreen(): JSX.Element {
     return <IntermissionScreen title="게임 결과를 준비하고 있어요" copy="잠시만 기다려 주세요." />;
   }
   const config = modeConfig(result.modeId, isSpeciesId(result.removedSpecies) ? result.removedSpecies : undefined);
+  const isMode4 = result.modeId === "web_removal";
   const playableIds = config.playableSpecies.filter((id) => result.players.some((player) => player.species === id));
   const openRanking = (speciesId: PlayableSpeciesId) => { if (playableIds.includes(speciesId)) setSelectedSpecies(speciesId); };
   const modalSpecies = selectedSpecies && playableIds.includes(selectedSpecies) ? selectedSpecies : null;
@@ -565,9 +570,9 @@ export function ModeResultScreen(): JSX.Element {
         <div><span className="result-topbar-mark">결과</span><div><small>{config.number}번 게임 · {modeTime(result.durationMs)}</small><h1>{config.title}</h1></div></div>
         <div className="result-topbar-meta">{result.modeId === "chain_removal" ? <span>개구리 NPC 1마리</span> : result.removedSpecies && isSpeciesId(result.removedSpecies) ? <span>{SPECIES[result.removedSpecies].name} 제외</span> : <span>{result.observedRelations.length}개 관계 기록</span>}</div>
       </header>
-      {config.kind === "chain" ? <ChainResultScene key={`chain-${replayKey}`} result={result} config={config} onSelect={openRanking} showPopulationBadges={result.modeId === "chain_removal"} /> : <WebResultScene key={`web-${replayKey}`} result={result} config={config} onSelect={openRanking} />}
-      <button type="button" className="result-replay-button" onClick={() => { setSelectedSpecies(null); setReplayKey((current) => current + 1); }}>결과 애니메이션 다시보기</button>
-      <ResultTeacherControls />
+      {config.kind === "chain" ? <ChainResultScene key={`chain-${replayKey}`} result={result} config={config} onSelect={openRanking} showPopulationBadges={result.modeId === "chain_removal"} /> : <WebResultScene key={`web-${replayKey}`} config={config} result={result} instant={isMode4} showPopulationBadges={isMode4} onSelect={openRanking} />}
+      {!isMode4 && <button type="button" className="result-replay-button" onClick={() => { setSelectedSpecies(null); setReplayKey((current) => current + 1); }}>결과 애니메이션 다시보기</button>}
+      <ResultTeacherControls mode4={isMode4} />
       {modalSpecies && <RankingModal result={result} speciesId={modalSpecies} onClose={() => setSelectedSpecies(null)} />}
     </main>
   );

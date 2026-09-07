@@ -546,17 +546,6 @@ export class GameTestScene extends Phaser.Scene {
 
   private drawWorld(): void {
     createWorldTileBackground(this, "test-");
-    const ground = this.add.graphics().setDepth(5);
-
-    WORLD_OBSTACLES.forEach((rect, index) => {
-      ground.fillStyle(0x183f2c).fillRect(rect.x - 8, rect.y + 10, rect.width + 16, rect.height + 10);
-      ground.fillStyle(0x805c36).fillRect(rect.x - 5, rect.y - 5, rect.width + 10, rect.height + 10);
-      ground.fillStyle(index % 2 ? 0x326a3d : 0x397746).fillRect(rect.x, rect.y, rect.width, rect.height);
-      ground.fillStyle(0x70a34d).fillRect(rect.x + 8, rect.y + 8, rect.width - 16, 7);
-      const treeCount = Math.max(2, Math.floor(rect.width / 55));
-      for (let i = 0; i < treeCount; i += 1) this.drawTree(rect.x + 24 + i * 48, rect.y + 22 + (i % 2) * 38);
-    });
-
     this.bushes = createWorldBushes(this, "test-");
 
     const landmarks = [
@@ -567,14 +556,6 @@ export class GameTestScene extends Phaser.Scene {
       [2190, 1370, "만남의 광장"],
     ] as const;
     landmarks.forEach(([x, y, label]) => this.add.text(x, y, label, { fontFamily: "Mona12, sans-serif", fontSize: "28px", color: "#fffbe8", stroke: "#295b3b", strokeThickness: 7 }).setDepth(7));
-  }
-
-  private drawTree(x: number, y: number): void {
-    const tree = this.add.graphics().setPosition(x, y).setDepth(6);
-    tree.fillStyle(0x503724).fillRect(-5, 20, 11, 18);
-    tree.fillStyle(0x173f2a).fillRect(-22, -2, 44, 30);
-    tree.fillStyle(0x3b7a43).fillRect(-16, -16, 33, 31);
-    tree.fillStyle(0x77a94e).fillRect(-8, -13, 9, 8);
   }
 
   private burst(_color: number, copy: string): void {

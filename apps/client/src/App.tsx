@@ -15,6 +15,7 @@ const FoodWebScreen = lazy(() => import("./screens/FoodWebScreen").then((module)
 const ExperimentPlaybackScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.ExperimentPlaybackScreen })));
 const FinalResultsScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.FinalResultsScreen })));
 const ModeResultScreen = lazy(() => import("./screens/ExperimentScreen").then((module) => ({ default: module.ModeResultScreen })));
+const Mode4ReviewScreen = lazy(() => import("./screens/Mode4ReviewScreen").then((module) => ({ default: module.Mode4ReviewScreen })));
 const GameTestScreen = lazy(() => import("./screens/GameTestScreen").then((module) => ({ default: module.GameTestScreen })));
 
 function CurrentScreen(): JSX.Element {
@@ -28,6 +29,7 @@ function CurrentScreen(): JSX.Element {
   if (snapshot.phase === "role_reveal") return role === "student" ? <RoleRevealScreen /> : <IntermissionScreen title="역할을 확인하는 중" copy="학생들이 자신의 먹이 관계를 살펴보고 있어요." />;
   if (isActivePlayPhase(snapshot.phase)) return <GameScreen />;
   if (snapshot.phase === "mode_result") return <ModeResultScreen />;
+  if (snapshot.phase === "mode4_quiz" || snapshot.phase === "mode4_reflection" || snapshot.phase === "lesson_complete") return <Mode4ReviewScreen />;
   if (isWebPhase(snapshot.phase)) return <FoodWebScreen />;
   if (snapshot.phase === "mode_setup") return <IntermissionScreen title="게임 모드를 준비하고 있어요" copy={role === "teacher" ? "오른쪽 교사 패널에서 네 가지 활동 중 하나를 선택하세요." : "선생님이 오늘 관찰할 먹이사슬 또는 먹이그물을 고르고 있어요."} />;
   if (snapshot.phase === "experiment_setup") return <IntermissionScreen title="생태계 변화 실험" copy={role === "teacher" ? "오른쪽에서 사라질 생물을 선택하세요." : "어떤 생물이 사라질지 선생님과 함께 정해 보세요."} />;
@@ -45,6 +47,7 @@ export default function App(): JSX.Element {
   const isGameTest = window.location.pathname === "/game-test";
   const isTeacherLobby = role === "teacher" && (phase === "lobby" || phase === "mode_setup" || phase === "role_reveal");
   const isTeacherResult = role === "teacher" && phase === "mode_result";
+  const isTeacherReview = role === "teacher" && (phase === "mode4_quiz" || phase === "mode4_reflection" || phase === "lesson_complete");
 
   useEffect(() => {
     if (!isGameTest && !room && sessionStorage.getItem("feed-chain-reconnection")) {
@@ -60,13 +63,13 @@ export default function App(): JSX.Element {
   if (!room) return <><LandingScreen />{connecting && <div className="reconnect-cover">생태계로 다시 연결 중…</div>}<RotateNotice /></>;
 
   return (
-    <div className={`app-shell ${role === "teacher" ? "teacher-mode" : "student-mode"} ${isTeacherResult ? "result-fullscreen" : ""}`}>
+    <div className={`app-shell ${role === "teacher" ? "teacher-mode" : "student-mode"} ${isTeacherResult || isTeacherReview ? "result-fullscreen" : ""}`}>
       <div className={isTeacherLobby ? "teacher-lobby-slot" : "screen-slot"}>
         <Suspense fallback={<IntermissionScreen title="생태계를 펼치는 중" copy="곧 탐험이 시작돼요." />}>
           {isTeacherLobby ? <TeacherLobbyScreen /> : <CurrentScreen />}
         </Suspense>
       </div>
-      {role === "teacher" && !isTeacherLobby && !isTeacherResult && <TeacherPanel />}
+      {role === "teacher" && !isTeacherLobby && !isTeacherResult && !isTeacherReview && <TeacherPanel />}
       <NoticeToast />
       <RotateNotice />
     </div>

@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import {
   EAT_RANGE,
   WORLD_HEIGHT,
-  WORLD_OBSTACLES,
   WORLD_WIDTH,
   canSeeThroughCover,
   isGameModeId,
@@ -176,19 +175,6 @@ export class GameScene extends Phaser.Scene {
 
   private drawWorld(): void {
     createWorldTileBackground(this);
-    const graphics = this.add.graphics().setDepth(5);
-
-    WORLD_OBSTACLES.forEach((rect, index) => {
-      graphics.fillStyle(0x183f2c).fillRect(rect.x - 8, rect.y + 10, rect.width + 16, rect.height + 10);
-      graphics.fillStyle(0x805c36).fillRect(rect.x - 5, rect.y - 5, rect.width + 10, rect.height + 10);
-      graphics.fillStyle(index % 2 ? 0x326a3d : 0x397746).fillRect(rect.x, rect.y, rect.width, rect.height);
-      graphics.fillStyle(0x70a34d).fillRect(rect.x + 8, rect.y + 8, rect.width - 16, 7);
-      const treeCount = Math.max(2, Math.floor(rect.width / 55));
-      for (let i = 0; i < treeCount; i += 1) {
-        this.drawPixelTree(rect.x + 24 + i * 48, rect.y + 22 + (i % 2) * 38, index % 2 === 0);
-      }
-    });
-
     this.bushes = createWorldBushes(this);
 
     const landmarks = [
@@ -207,15 +193,6 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 7,
       }).setDepth(7);
     });
-  }
-
-  private drawPixelTree(x: number, y: number, pine: boolean): void {
-    const tree = this.add.graphics().setPosition(x, y).setDepth(6);
-    tree.fillStyle(0x503724).fillRect(-5, 25, 12, 15);
-    tree.fillStyle(0x173f2a).fillRect(-20, 2, 42, 28);
-    tree.fillStyle(pine ? 0x245d35 : 0x2f6d3b).fillRect(-16, -8, 34, 26);
-    tree.fillStyle(0x3f8445).fillRect(-11, -17, 24, 22);
-    tree.fillStyle(0x78a94d).fillRect(-6, -14, 8, 8);
   }
 
   private syncPlayers(players: PlayerSnapshot[], selfId: string, viewerX: number, viewerY: number): void {

@@ -80,24 +80,12 @@ export const WORLD_COVER_ZONES: readonly WorldCoverZone[] = [
   ]),
 ] as const;
 
-export const WORLD_OBSTACLES: readonly WorldRect[] = [
-  { x: 420, y: 360, width: 300, height: 190 },
-  { x: 1180, y: 250, width: 340, height: 220 },
-  { x: 520, y: 920, width: 360, height: 230 },
-  { x: 1450, y: 820, width: 290, height: 250 },
-  { x: 3150, y: 310, width: 330, height: 210 },
-  { x: 3980, y: 460, width: 360, height: 230 },
-  { x: 3020, y: 880, width: 300, height: 230 },
-  { x: 3920, y: 1010, width: 350, height: 210 },
-  { x: 430, y: 1960, width: 360, height: 230 },
-  { x: 1280, y: 2260, width: 330, height: 220 },
-  { x: 720, y: 2520, width: 300, height: 190 },
-  { x: 3030, y: 2010, width: 320, height: 230 },
-  { x: 3920, y: 2180, width: 370, height: 220 },
-  { x: 3480, y: 2570, width: 300, height: 180 },
-  { x: 1810, y: 520, width: 260, height: 210 },
-  { x: 2680, y: 2270, width: 250, height: 220 },
-];
+/**
+ * The meadow no longer has the old rectangular flowerbed/tree obstacles.
+ * Keep the shared list so collision callers remain compatible with future
+ * props, but leave it empty for the open field layout.
+ */
+export const WORLD_OBSTACLES: readonly WorldRect[] = [];
 
 export const SPAWN_POINTS = [
   { x: 240, y: 220 }, { x: 900, y: 210 }, { x: 1700, y: 220 }, { x: 2400, y: 230 }, { x: 3100, y: 210 }, { x: 3850, y: 220 }, { x: 4560, y: 230 },

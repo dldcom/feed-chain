@@ -7,3 +7,4 @@ export * from "./scoring.js";
 export * from "./simulation.js";
 export * from "./species.js";
 export * from "./world.js";
+export * from "./quiz.js";

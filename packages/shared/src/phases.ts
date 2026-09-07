@@ -4,6 +4,9 @@ export const GAME_PHASES = [
   "mode_setup",
   "mode_play",
   "mode_result",
+  "mode4_quiz",
+  "mode4_reflection",
+  "lesson_complete",
   "round_1",
   "web_review_1",
   "round_2",
@@ -30,6 +33,9 @@ export const PHASE_LABELS: Record<GamePhase, string> = {
   experiment_a: "실험 A · 실제 기록 관계",
   experiment_b: "실험 B · 완성된 먹이그물",
   final_results: "생태계 비교 결과",
+  mode4_quiz: "모드 4 퀴즈",
+  mode4_reflection: "알게 된 점 쓰기",
+  lesson_complete: "수업 마무리",
 };
 
 export const ACTIVE_PLAY_PHASES: readonly GamePhase[] = [
@@ -54,6 +60,7 @@ export function isModePhase(phase: GamePhase): boolean {
 export function nextPhase(phase: GamePhase): GamePhase {
   if (phase === "role_reveal") return "round_1";
   if (phase === "mode_result") return "mode_setup";
+  if (phase === "lesson_complete") return "mode_setup";
   const index = GAME_PHASES.indexOf(phase);
   return GAME_PHASES[Math.min(index + 1, GAME_PHASES.length - 1)] ?? "final_results";
 }
