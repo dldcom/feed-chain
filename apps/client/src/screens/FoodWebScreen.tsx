@@ -15,7 +15,6 @@ import { useGameStore } from "../store/gameStore";
 interface GraphNode extends SimulationNodeDatum {
   id: SpeciesId;
   name: string;
-  emoji: string;
   color: string;
 }
 
@@ -38,7 +37,7 @@ function downloadCurrentGraph(roomCode: string): void {
   const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
   style.textContent = `
     .graph-edge.observed{stroke:#ff645f}.graph-edge.blue{stroke:#4ca8ff;stroke-dasharray:10 7}
-    .graph-label,.individual-label{fill:#fff;font-family:sans-serif;font-weight:900;paint-order:stroke;stroke:#102b22;stroke-width:5px}
+    .graph-label,.individual-label{fill:#fff;font-family:Mona12,sans-serif;font-weight:400;paint-order:stroke;stroke:#102b22;stroke-width:5px}
     .individual-label{font-size:11px}.graph-label{font-size:14px}.individual-node circle,.graph-node circle{stroke:#fff;stroke-width:3px}
   `;
   clone.prepend(style);
@@ -82,7 +81,6 @@ function SpeciesGraph(): JSX.Element {
     const nodes: GraphNode[] = (Object.keys(SPECIES) as SpeciesId[]).filter((id) => visibleSpecies.has(id)).map((id) => ({
       id,
       name: SPECIES[id].name,
-      emoji: SPECIES[id].emoji,
       color: SPECIES[id].cssColor,
     }));
     const links: GraphLink[] = [
@@ -129,16 +127,16 @@ function SpeciesGraph(): JSX.Element {
           return (
             <g key={node.id} transform={`translate(${node.x} ${node.y})`} className={`graph-node ${selected}`} onClick={() => selectNode(node.id)} role="button" tabIndex={0} aria-label={`${node.name} 선택`}>
               <circle r="45" fill={node.color} />
-              <text y="7" textAnchor="middle" fontSize="36">{node.emoji}</text>
+              <text y="7" textAnchor="middle" fontSize="24">{node.name.slice(0, 1)}</text>
               <text y="65" textAnchor="middle" className="graph-label">{node.name}</text>
             </g>
           );
         })}
       </svg>
       <div className="edge-builder">
-        <div><small>① 먹이가 되는 생물</small><strong>{prey ? `${SPECIES[prey].emoji} ${SPECIES[prey].name}` : "노드를 선택하세요"}</strong></div>
+            <div><small>① 먹이가 되는 생물</small><strong>{prey ? SPECIES[prey].name : "노드를 선택하세요"}</strong></div>
         <span>→</span>
-        <div><small>② 먹는 생물</small><strong>{predator ? `${SPECIES[predator].emoji} ${SPECIES[predator].name}` : "다음 노드를 선택하세요"}</strong></div>
+            <div><small>② 먹는 생물</small><strong>{predator ? SPECIES[predator].name : "다음 노드를 선택하세요"}</strong></div>
         <button
           disabled={!prey || !predator || observedKeys.has(relationKey(prey ?? "", predator ?? ""))}
           onClick={() => {
@@ -181,7 +179,7 @@ function IndividualGraph(): JSX.Element {
           return (
             <g key={node.id} transform={`translate(${node.x} ${node.y})`} className="individual-node">
               <circle r="29" fill={species.cssColor} />
-              <text y="7" textAnchor="middle" fontSize="25">{species.emoji}</text>
+              <text y="7" textAnchor="middle" fontSize="20">{species.name.slice(0, 1)}</text>
               <text y="46" textAnchor="middle" className="individual-label">{node.name}</text>
             </g>
           );
@@ -203,12 +201,12 @@ export function FoodWebScreen(): JSX.Element {
         <div className="legend"><span><i className="red-line" /> 실제 플레이 기록</span><span><i className="blue-line" /> 우리가 추가한 관계</span></div>
         <div className="web-header-actions">
           <div className="web-progress"><small>먹이그물 완성도</small><strong>{progress}%</strong></div>
-          <button onClick={() => downloadCurrentGraph(snapshot.roomCode)}>📷 이미지 저장</button>
+          <button onClick={() => downloadCurrentGraph(snapshot.roomCode)}>이미지 저장</button>
         </div>
       </header>
       <div className="view-switch">
-        <button className={view === "individual" ? "active" : ""} onClick={() => setView("individual")}>👥 우리 반 23개체</button>
-        <button className={view === "species" ? "active" : ""} onClick={() => setView("species")}>🌿 생물 종류별 보기</button>
+        <button className={view === "individual" ? "active" : ""} onClick={() => setView("individual")}>우리 반 {snapshot.players.length}개체</button>
+        <button className={view === "species" ? "active" : ""} onClick={() => setView("species")}>생물 종류별 보기</button>
       </div>
       {view === "individual" ? <IndividualGraph /> : <SpeciesGraph />}
       {view === "individual" && <p className="web-tip">빨간 화살표는 <strong>먹이가 된 생물 → 먹은 생물</strong> 방향이에요.</p>}

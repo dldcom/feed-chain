@@ -9,24 +9,83 @@ export interface WorldRect {
   height: number;
 }
 
-export const WORLD_OBSTACLES: readonly WorldRect[] = [
-  { x: 420, y: 360, width: 300, height: 190 },
-  { x: 1180, y: 250, width: 340, height: 220 },
-  { x: 520, y: 920, width: 360, height: 230 },
-  { x: 1450, y: 820, width: 290, height: 250 },
-  { x: 3150, y: 310, width: 330, height: 210 },
-  { x: 3980, y: 460, width: 360, height: 230 },
-  { x: 3020, y: 880, width: 300, height: 230 },
-  { x: 3920, y: 1010, width: 350, height: 210 },
-  { x: 430, y: 1960, width: 360, height: 230 },
-  { x: 1280, y: 2260, width: 330, height: 220 },
-  { x: 720, y: 2520, width: 300, height: 190 },
-  { x: 3030, y: 2010, width: 320, height: 230 },
-  { x: 3920, y: 2180, width: 370, height: 220 },
-  { x: 3480, y: 2570, width: 300, height: 180 },
-  { x: 1810, y: 520, width: 260, height: 210 },
-  { x: 2680, y: 2270, width: 250, height: 220 },
-];
+/** A visual concealment area. The id is shared by every visual bush piece in a cluster. */
+export interface WorldCoverZone extends WorldRect {
+  id: string;
+  /** Optional square cover modules that make up the visual cluster. */
+  regions?: readonly WorldRect[];
+}
+
+/**
+ * Bush groups are intentionally separate from the background tiles. A group can be made from
+ * several overlapping square modules while still behaving as one visibility zone.
+ */
+export const WORLD_COVER_MODULE_SIZE = 176;
+
+interface CoverModuleOffset {
+  dx: number;
+  dy: number;
+}
+
+function createCoverZone(
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  offsets: readonly CoverModuleOffset[],
+): WorldCoverZone {
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  const halfSize = WORLD_COVER_MODULE_SIZE / 2;
+  return {
+    id,
+    x,
+    y,
+    width,
+    height,
+    regions: offsets.map(({ dx, dy }) => ({
+      x: centerX + dx - halfSize,
+      y: centerY + dy - halfSize,
+      width: WORLD_COVER_MODULE_SIZE,
+      height: WORLD_COVER_MODULE_SIZE,
+    })),
+  };
+}
+
+export const WORLD_COVER_ZONES: readonly WorldCoverZone[] = [
+  createCoverZone("bush-northwest", 560, 440, 560, 150, [
+    { dx: -164, dy: 0 }, { dx: 0, dy: -8 }, { dx: 164, dy: 3 },
+  ]),
+  createCoverZone("bush-northeast", 3650, 450, 560, 150, [
+    { dx: -164, dy: 2 }, { dx: 0, dy: -7 }, { dx: 164, dy: 0 },
+  ]),
+  createCoverZone("bush-west-middle", 300, 1210, 520, 150, [
+    { dx: -156, dy: 0 }, { dx: 0, dy: -7 }, { dx: 156, dy: 3 },
+  ]),
+  createCoverZone("bush-east-middle", 3980, 1210, 520, 150, [
+    { dx: -156, dy: 1 }, { dx: 0, dy: -9 }, { dx: 156, dy: -1 },
+  ]),
+  createCoverZone("bush-southwest", 760, 2310, 560, 150, [
+    { dx: -164, dy: 2 }, { dx: 0, dy: -7 }, { dx: 164, dy: 0 },
+  ]),
+  createCoverZone("bush-southeast", 3520, 2300, 600, 150, [
+    { dx: -180, dy: 1 }, { dx: 0, dy: -8 }, { dx: 180, dy: 3 },
+  ]),
+  createCoverZone("bush-central-west", 1480, 990, 520, 150, [
+    { dx: -156, dy: 0 }, { dx: 0, dy: -7 }, { dx: 156, dy: 2 },
+  ]),
+  createCoverZone("bush-central-east", 2800, 1770, 520, 150, [
+    { dx: -156, dy: 2 }, { dx: 0, dy: -8 }, { dx: 156, dy: -1 },
+  ]),
+] as const;
+
+/**
+ * The meadow no longer has the old rectangular flowerbed/tree obstacles.
+ * Keep the shared list so collision callers remain compatible with future
+ * props, but leave it empty for the open field layout.
+ */
+export const WORLD_OBSTACLES: readonly WorldRect[] = [];
 
 export const SPAWN_POINTS = [
   { x: 240, y: 220 }, { x: 900, y: 210 }, { x: 1700, y: 220 }, { x: 2400, y: 230 }, { x: 3100, y: 210 }, { x: 3850, y: 220 }, { x: 4560, y: 230 },
@@ -64,4 +123,23 @@ export function collidesWithObstacle(x: number, y: number): boolean {
     x + PLAYER_RADIUS > rect.x && x - PLAYER_RADIUS < rect.x + rect.width &&
     y + PLAYER_RADIUS > rect.y && y - PLAYER_RADIUS < rect.y + rect.height,
   );
+}
+
+export function coverZoneAt(x: number, y: number): WorldCoverZone | undefined {
+  return WORLD_COVER_ZONES.find((zone) =>
+    (zone.regions ?? [zone]).some((region) =>
+      x >= region.x && x <= region.x + region.width &&
+      y >= region.y && y <= region.y + region.height,
+    ),
+  );
+}
+
+export function coverIdAt(x: number, y: number): string | null {
+  return coverZoneAt(x, y)?.id ?? null;
+}
+
+/** Returns whether a viewer may see a target under the shared bush rule. */
+export function canSeeThroughCover(viewerX: number, viewerY: number, targetX: number, targetY: number): boolean {
+  const targetCoverId = coverIdAt(targetX, targetY);
+  return targetCoverId === null || targetCoverId === coverIdAt(viewerX, viewerY);
 }

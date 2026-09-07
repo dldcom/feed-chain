@@ -90,6 +90,10 @@ export interface GameSnapshot {
   modeNumber: number;
   modeTitle: string;
   modeElapsedMs: number;
+  modeInstanceId: number;
+  roleRevealEndsAt: number;
+  quizQuestionIndex: number;
+  quizRevealed: boolean;
   removedSpecies: string;
   expectedRelations: number;
   players: PlayerSnapshot[];
@@ -114,6 +118,10 @@ export const EMPTY_SNAPSHOT: GameSnapshot = {
   modeNumber: 0,
   modeTitle: "",
   modeElapsedMs: 0,
+  modeInstanceId: 0,
+  roleRevealEndsAt: 0,
+  quizQuestionIndex: -1,
+  quizRevealed: false,
   removedSpecies: "",
   expectedRelations: 0,
   players: [],

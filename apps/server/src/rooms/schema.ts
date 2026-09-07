@@ -3,7 +3,8 @@ import { ArraySchema, MapSchema, Schema, type } from "@colyseus/schema";
 export class PlayerState extends Schema {
   @type("string") id = "";
   @type("string") name = "";
-  @type("string") species = "grasshopper";
+  /** Server-only role. The role is sent through private messages during the briefing. */
+  species = "grasshopper";
   @type("number") x = 0;
   @type("number") y = 0;
   @type("number") facingX = 0;
@@ -92,6 +93,11 @@ export class GameState extends Schema {
   @type("number") modeNumber = 0;
   @type("string") modeTitle = "";
   @type("number") modeElapsedMs = 0;
+  @type("number") modeInstanceId = 0;
+  @type("number") roleRevealEndsAt = 0;
+  /** Current mode 4 question (-1 while the quiz is not open). */
+  @type("number") quizQuestionIndex = -1;
+  @type("boolean") quizRevealed = false;
   @type("string") removedSpecies = "";
   @type("string") experimentJson = "";
   @type("string") modeResultJson = "";
