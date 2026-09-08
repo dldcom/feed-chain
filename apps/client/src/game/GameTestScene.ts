@@ -257,6 +257,7 @@ export class GameTestScene extends Phaser.Scene {
     this.stopSpeciesAction();
     this.populationCount = 1;
     this.playerStatus = "active";
+    this.rebuildTargets();
     this.burst(0xffe57a, `${mode.number}번 게임`);
     this.emitStatus(this.time.now, true);
   }
@@ -471,20 +472,28 @@ export class GameTestScene extends Phaser.Scene {
   }
 
   private createTargets(): void {
-    PLANT_SPAWN_POINTS.slice(0, 32).forEach((point, index) => {
-      const speciesId: SpeciesId = (index % 4 === 0 ? "berry" : index % 4 === 1 ? "acorn" : index % 4 === 2 ? "clover" : "grass");
-      this.targets.push(this.createTarget(`plant-${index}`, speciesId, point.x, point.y));
-    });
-    const animalSpecies = PLAYABLE_SPECIES.map((species) => species.id);
+    const mode = modeConfig(this.modeId, this.removedSpecies);
+    const producerSpecies = mode.producerSpecies.filter((speciesId) => isPlantSpriteSpecies(speciesId));
+    if (producerSpecies.length > 0) {
+      PLANT_SPAWN_POINTS.slice(0, 32).forEach((point, index) => {
+        const speciesId = producerSpecies[index % producerSpecies.length]!;
+        this.targets.push(this.createTarget(`plant-${index}`, speciesId, point.x, point.y));
+      });
+    }
+    const animalSpecies = mode.activeSpecies.filter(
+      (speciesId): speciesId is PlayableSpeciesId => isPlayableSpeciesId(speciesId) && !mode.producerSpecies.includes(speciesId),
+    );
     SPAWN_POINTS.slice(0, 28).forEach((point, index) => {
-      const speciesId = animalSpecies[index % animalSpecies.length]!;
+      const speciesId = animalSpecies[index % animalSpecies.length];
+      if (!speciesId) return;
       this.targets.push(this.createTarget(`animal-${index}`, speciesId, point.x, point.y));
     });
-    const practiceRing: SpeciesId[] = ["grass", "berry", "grasshopper", "caterpillar", "frog", "rabbit", "squirrel", "bulbul", "duck", "snake"];
-    practiceRing.forEach((speciesId, index) => {
-      const angle = (Math.PI * 2 * index) / practiceRing.length;
-      this.targets.push(this.createTarget(`practice-${index}`, speciesId, WORLD_WIDTH / 2 + Math.cos(angle) * 185, WORLD_HEIGHT / 2 + Math.sin(angle) * 185));
-    });
+  }
+
+  private rebuildTargets(): void {
+    this.targets.forEach((target) => target.visual.destroy(true));
+    this.targets = [];
+    this.createTargets();
   }
 
   private createTarget(id: string, speciesId: SpeciesId, x: number, y: number): TestTarget {

@@ -17,6 +17,9 @@ export const GAME_PHASES = [
   "final_results",
 ] as const;
 
+/** Time students get to try their role before the mode begins. */
+export const ROLE_REVEAL_DURATION_MS = 60 * 1000;
+
 export type GamePhase = (typeof GAME_PHASES)[number];
 
 export const PHASE_LABELS: Record<GamePhase, string> = {

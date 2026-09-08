@@ -714,36 +714,36 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .hunger-meter[data-state="low"] i.active { background: var(--hud-low); }
 
 .hud-relations {
-  gap: 2px;
-  padding: 1px 0;
+  gap: 4px;
+  padding: 2px 0;
 }
 
 .relation-row {
-  grid-template-columns: 20px auto;
-  gap: 4px;
-  min-height: 24px;
+  grid-template-columns: 28px auto;
+  gap: 5px;
+  min-height: 36px;
 }
 
 .relation-label {
-  width: 20px;
-  height: 24px;
-  color: var(--hud-muted);
+  width: 28px;
+  height: 36px;
+  color: #fff0a6;
   background: transparent;
   border: 0;
   box-shadow: none;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .relation-icons {
-  grid-template-columns: repeat(4, 24px);
-  gap: 4px;
-  min-width: 24px;
-  min-height: 24px;
+  grid-template-columns: repeat(4, 34px);
+  gap: 5px;
+  min-width: 34px;
+  min-height: 34px;
 }
 
 .relation-icon-cell {
-  width: 24px;
-  height: 24px;
+  width: 34px;
+  height: 34px;
   background: rgba(16, 41, 31, .42);
   border: 0;
   border-radius: 0;
@@ -751,8 +751,8 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 }
 
 .relation-icon-cell .pixel-species-icon {
-  width: 20px;
-  height: 20px;
+  width: 29px;
+  height: 29px;
 }
 
 .round-timer {
@@ -801,11 +801,11 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
   .hunger-bar { grid-template-columns: 16px minmax(0, 1fr); gap: 4px; }
   .hunger-bar > img { width: 16px; height: 16px; }
   .hunger-meter, .hunger-meter i { height: 7px; }
-  .relation-row { grid-template-columns: 18px auto; gap: 3px; min-height: 20px; }
-  .relation-label { width: 18px; height: 20px; font-size: 8px; }
-  .relation-icons { grid-template-columns: repeat(4, 20px); gap: 3px; min-width: 20px; min-height: 20px; }
-  .relation-icon-cell { width: 20px; height: 20px; }
-  .relation-icon-cell .pixel-species-icon { width: 18px; height: 18px; }
+  .relation-row { grid-template-columns: 24px auto; gap: 4px; min-height: 32px; }
+  .relation-label { width: 24px; height: 32px; color: #fff0a6; font-size: 9px; }
+  .relation-icons { grid-template-columns: repeat(4, 30px); gap: 4px; min-width: 30px; min-height: 30px; }
+  .relation-icon-cell { width: 30px; height: 30px; }
+  .relation-icon-cell .pixel-species-icon { width: 25px; height: 25px; }
   .round-timer { padding: 3px 6px 4px; }
   .round-timer strong { font-size: 18px; }
   .round-timer span { display: none; }
@@ -912,26 +912,52 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .role-countdown { display: grid; place-items: center; min-width: 75px; padding: 7px 11px; background: #0a2b21cc; border: 2px solid #e1c35e; }
 .role-countdown span { color: #b7caa3; font-size: 8px; }
 .role-countdown strong { color: #ffe887; font-family: "Mona12"; font-size: 30px; font-weight: 400; line-height: 1; }
-.role-practice-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(250px, .65fr); gap: 12px; width: min(1280px, 100%); margin: 0 auto; flex: 1; min-height: 0; }
-.role-practice-stage { position: relative; min-height: 350px; overflow: hidden; border: 3px solid #37664d; background: #5e9c48; }
+.role-practice-layout { display: flex; width: min(1440px, 100%); margin: 0 auto; flex: 1; min-height: 0; }
+.role-practice-stage { position: relative; flex: 1; min-height: 350px; overflow: hidden; border: 3px solid #37664d; background: #5e9c48; }
 .role-practice-stage .game-test-canvas { position: absolute; inset: 0; }
 .role-practice-stage .hud-top-left { left: 10px; top: 10px; transform: scale(.82); transform-origin: top left; }
 .role-practice-stage .action-buttons { right: 12px; bottom: 12px; transform: scale(.72); transform-origin: bottom right; }
 .role-practice-stage .joystick { left: 12px; bottom: 12px; transform: scale(.72); transform-origin: bottom left; }
-.role-practice-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 17px; color: #e2edcf; background: #0c2b22e8; border: 3px solid #37664d; }
-.role-practice-species { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 2px solid #37664d; }
-.role-practice-species .pixel-species-icon { width: 64px; height: 64px; background-color: color-mix(in srgb, var(--role-color) 22%, transparent); }
-.role-practice-species small, .practice-relation-grid small, .practice-skill-card small { display: block; color: #8fb99a; font-size: 9px; }
-.role-practice-species h2 { margin: 3px 0 0; color: #ffe58a; font-family: "Mona12"; font-size: 27px; font-weight: 400; }
-.practice-relation-grid { display: grid; gap: 10px; }
-.practice-icons { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; min-height: 34px; }
-.practice-icons > span { display: grid; place-items: center; width: 34px; height: 34px; background: #153e2f; border: 2px solid #2d6249; }
-.practice-icons .pixel-species-icon { width: 30px; height: 30px; }
-.practice-icons em { color: #7f9d84; font-size: 10px; font-style: normal; }
-.practice-skill-card { margin-top: auto; padding: 10px; background: #153e2f; border: 2px solid #2d6249; }
-.practice-skill-card strong { display: block; margin-top: 3px; color: #e8c965; font-family: "Mona12"; font-size: 17px; font-weight: 400; }
-.practice-skill-card p, .role-practice-tip { margin: 5px 0 0; color: #9cb99a; font-size: 9px; line-height: 1.5; }
-.role-practice-tip { margin-top: auto; }
+
+/* The role briefing doubles as a four-step, hands-on tutorial on the unified
+   practice stage. It is transparent to map input except for the next button. */
+.role-tutorial {
+  position: absolute;
+  z-index: 24;
+  top: 14px;
+  left: 50%;
+  display: grid;
+  gap: 6px;
+  width: min(760px, calc(100% - 32px));
+  min-height: 180px;
+  padding: 15px 18px 16px;
+  color: #e9efcf;
+  background: #0c2b22e8;
+  border: 3px solid #d8c35e;
+  box-shadow: 4px 4px 0 #061b1688;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.role-tutorial-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #9eb99b; font-size: 9px; }
+.role-tutorial-dots { display: flex; gap: 5px; }
+.role-tutorial-dots i { display: block; width: 34px; height: 5px; background: #345b45; }
+.role-tutorial-dots i.passed { background: #7fae61; }
+.role-tutorial-dots i.active { background: #f1d56b; }
+.role-tutorial > strong { color: #ffe58a; font-family: "Mona12"; font-size: 22px; font-weight: 400; }
+.role-tutorial > p { margin: 0; color: #d4e2c0; font-size: 12px; line-height: 1.4; }
+.role-tutorial > small { color: #91b397; font-size: 9px; line-height: 1.3; }
+.role-tutorial-relation-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.role-tutorial-relation-groups > div { display: grid; gap: 4px; min-width: 0; padding: 8px; background: #102f25; border: 2px solid #2d6249; }
+.role-tutorial-relation-groups small { color: #91b397; font-size: 9px; }
+.role-tutorial-relations { display: flex; flex-wrap: wrap; gap: 5px; min-height: 76px; align-items: center; }
+.role-tutorial-relations > .role-tutorial-species-cell { display: flex; flex: none; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 66px; min-height: 70px; padding: 3px 2px; background: #153e2f; border: 2px solid #477657; }
+.role-tutorial-species-cell .pixel-species-icon { width: 49px; height: 49px; }
+.role-tutorial-species-cell b { display: block; width: 100%; overflow: hidden; color: #e5edc9; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 400; }
+.role-tutorial-relations em { color: #9eb99b; font-size: 9px; font-style: normal; }
+.role-tutorial-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 26px; }
+.role-tutorial-done { margin-right: auto; color: #9dd276; font-size: 8px; }
+.role-tutorial-actions button { padding: 5px 12px; color: #193d2b; background: #e1c965; border: 2px solid #8d7130; font-size: 10px; pointer-events: auto; }
+.role-tutorial-actions button:hover, .role-tutorial-actions button:focus-visible { background: #fff0a1; outline: none; }
 
 @media (max-width: 860px) {
   .teacher-lobby-grid { grid-template-columns: 1fr; }
@@ -940,11 +966,8 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
   .teacher-share-card .share-card-title { width: auto; }
   .teacher-share-card .qr-frame { grid-column: 1; grid-row: 3 / span 2; width: min(190px, 100%); justify-self: center; }
   .teacher-share-card .class-code-display { margin: 0; }
-  .role-practice-layout { grid-template-columns: 1fr; }
   .role-practice-stage { min-height: 420px; }
-  .role-practice-card { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
-  .role-practice-species { grid-column: 1 / -1; }
-  .practice-skill-card, .role-practice-tip { margin-top: 0; }
+  .role-tutorial { width: min(680px, calc(100% - 24px)); }
 }
 
 @media (max-width: 540px) {
@@ -956,7 +979,14 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
   .teacher-share-card .qr-frame { width: min(210px, 75%); }
   .role-practice-header h1 { font-size: 22px; }
   .role-practice-stage { min-height: 360px; }
-  .role-practice-card { display: flex; }
+  .role-tutorial { top: 8px; width: calc(100% - 16px); min-height: 170px; padding: 10px 11px; }
+  .role-tutorial > strong { font-size: 17px; }
+  .role-tutorial > p { font-size: 10px; }
+  .role-tutorial-dots i { width: 20px; height: 4px; }
+  .role-tutorial-relation-groups { grid-template-columns: 1fr; gap: 6px; }
+  .role-tutorial-relations { min-height: 58px; }
+  .role-tutorial-relations > .role-tutorial-species-cell { width: 56px; min-height: 58px; }
+  .role-tutorial-species-cell .pixel-species-icon { width: 40px; height: 40px; }
 }
 
 /* Result screens: a single, stage-like pixel board rather than a dashboard. */
@@ -1259,11 +1289,30 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .review-secondary-action:hover:not(:disabled), .review-secondary-action:focus-visible { color: #183d2d; background: #a8c476; outline: none; }
 .review-quiet-action { color: #a5c09b; background: transparent; border: 1px solid #4d7654; }
 .review-teacher-actions button:disabled { color: #709078; background: #223d31; border-color: #3a5c44; opacity: .7; cursor: not-allowed; }
+.reflection-review-screen {
+  /* The visual viewport shrinks when a tablet keyboard opens. The inline
+     variable supplied by StudentReflection keeps the whole writing board in
+     that visible area instead of underneath the keyboard. */
+  height: var(--reflection-visual-height, 100%);
+  min-height: var(--reflection-visual-height, 100%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding: 24px 0;
+  padding-bottom: max(30px, env(safe-area-inset-bottom));
+}
+.reflection-review-screen.keyboard-open { justify-content: flex-start; }
+.reflection-review-screen.keyboard-open .reflection-board { margin-top: 0; margin-bottom: 0; }
 .reflection-board { padding: clamp(21px, 4vw, 41px); border: 3px solid #5c855e; background: #0a271fdd; }
 .reflection-spark { display: grid; place-items: center; width: 55px; height: 55px; margin-bottom: 12px; background: #23472f; border: 2px solid #7d9d54; }
 .reflection-spark .pixel-species-icon { width: 45px; height: 45px; }
 .reflection-board h2 { margin: 0 0 18px; color: #fff0ad; font-family: "Mona12", sans-serif; font-size: clamp(19px, 3.1vw, 31px); font-weight: 400; line-height: 1.35; }
-.reflection-board textarea { display: block; width: 100%; min-height: 170px; resize: vertical; padding: 13px; color: #e5efc9; background: #102f25; border: 2px solid #527b57; outline: none; font-family: "Mona12", sans-serif; font-size: 14px; line-height: 1.6; user-select: text; -webkit-user-select: text; touch-action: auto; }
+.reflection-input-wrap { display: grid; gap: 7px; }
+.reflection-input-toolbar { display: flex; align-items: center; gap: 9px; color: #9fbd9c; font-size: 10px; }
+.reflection-input-toolbar strong { margin-left: auto; color: #f1d66e; font-family: "Mona12", sans-serif; font-size: 12px; font-weight: 400; }
+.reflection-keyboard-done { display: none; min-height: 28px; padding: 4px 9px; color: #183d2d; background: #a8c476; border: 1px solid #d5df8c; font-family: "Mona12", sans-serif; font-size: 10px; }
+.reflection-review-screen.keyboard-open .reflection-keyboard-done { display: block; }
+.reflection-board textarea { display: block; width: 100%; min-height: 170px; resize: vertical; padding: 13px; color: #e5efc9; background: #102f25; border: 2px solid #527b57; outline: none; font-family: "Mona12", sans-serif; font-size: 14px; line-height: 1.6; user-select: text; -webkit-user-select: text; touch-action: auto; scroll-margin: 24px; }
 .reflection-board textarea:focus { border-color: #e3cd6b; }
 .reflection-board textarea::placeholder { color: #6e9475; }
 .reflection-meter { height: 8px; margin-top: 11px; background: #294a36; border: 1px solid #4e7150; }
@@ -1301,6 +1350,20 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
   .review-teacher-actions button { flex: 1; }
   .reflection-actions { align-items: stretch; flex-direction: column; }
   .reflection-actions button { width: 100%; }
+  .reflection-review-screen {
+    padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  }
+  .reflection-review-screen .review-topbar { margin-bottom: 12px; }
+  .reflection-board { padding: 16px; }
+  .reflection-board h2 { margin-bottom: 12px; font-size: clamp(18px, 5vw, 25px); }
+  .reflection-board textarea { min-height: 145px; }
+  .reflection-review-screen.keyboard-open .review-topbar { margin-bottom: 8px; padding-bottom: 8px; }
+  .reflection-review-screen.keyboard-open .reflection-spark { display: none; }
+  .reflection-review-screen.keyboard-open .reflection-board { padding: 12px; }
+  .reflection-review-screen.keyboard-open .reflection-board h2 { margin-bottom: 9px; font-size: clamp(17px, 4.8vw, 23px); }
+  .reflection-review-screen.keyboard-open .reflection-board textarea { min-height: 108px; max-height: 180px; }
+  .reflection-review-screen.keyboard-open .reflection-actions { gap: 8px; margin-top: 9px; }
+  .reflection-review-screen.keyboard-open .reflection-actions button { min-height: 34px; }
 }
 
 /* Teacher readability ---------------------------------------------------- */

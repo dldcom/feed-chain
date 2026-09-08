@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import {
   MODE4_QUIZ_QUESTIONS,
   MODE4_REFLECTION_MIN_LENGTH,
@@ -195,18 +195,111 @@ function TeacherQuiz({ questionIndex, revealed, progress }: { questionIndex: num
 function StudentReflection(): JSX.Element {
   const saved = useGameStore((state) => state.reflectionSaved);
   const [text, setText] = useState(saved?.text ?? "");
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusScrollTimerRef = useRef<number | null>(null);
+  const blurResetTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (saved?.text !== undefined) setText(saved.text);
   }, [saved?.text]);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return undefined;
+
+    const syncViewport = (): void => {
+      // A keyboard usually reduces the visual viewport by much more than the
+      // browser's address-bar animation. Keep a little tolerance for both.
+      const keyboardLikelyOpen = window.innerHeight - viewport.height > 120;
+      setVisualViewportHeight(keyboardLikelyOpen ? Math.round(viewport.height) : null);
+      setKeyboardOpen((wasOpen) => keyboardLikelyOpen || (wasOpen && document.activeElement === textareaRef.current));
+    };
+
+    syncViewport();
+    viewport.addEventListener("resize", syncViewport);
+    viewport.addEventListener("scroll", syncViewport);
+    return () => {
+      viewport.removeEventListener("resize", syncViewport);
+      viewport.removeEventListener("scroll", syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!keyboardOpen || visualViewportHeight === null) return undefined;
+    // Run after the compact layout has been painted, so the textarea is
+    // centered using the keyboard-adjusted geometry rather than the old one.
+    const frame = window.requestAnimationFrame(() => {
+      textareaRef.current?.scrollIntoView({ behavior: "auto", block: "center", inline: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [keyboardOpen, visualViewportHeight]);
+
+  useEffect(() => () => {
+    if (focusScrollTimerRef.current !== null) window.clearTimeout(focusScrollTimerRef.current);
+    if (blurResetTimerRef.current !== null) window.clearTimeout(blurResetTimerRef.current);
+  }, []);
+
+  const handleTextareaFocus = (): void => {
+    if (blurResetTimerRef.current !== null) window.clearTimeout(blurResetTimerRef.current);
+    setKeyboardOpen(true);
+    if (focusScrollTimerRef.current !== null) window.clearTimeout(focusScrollTimerRef.current);
+    focusScrollTimerRef.current = window.setTimeout(() => {
+      textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    }, 180);
+  };
+
+  const handleTextareaBlur = (): void => {
+    if (focusScrollTimerRef.current !== null) window.clearTimeout(focusScrollTimerRef.current);
+    if (blurResetTimerRef.current !== null) window.clearTimeout(blurResetTimerRef.current);
+    // Wait for the keyboard's closing animation before returning to the
+    // normal centered layout.
+    blurResetTimerRef.current = window.setTimeout(() => {
+      if (document.activeElement !== textareaRef.current) {
+        setKeyboardOpen(false);
+        setVisualViewportHeight(null);
+      }
+    }, 160);
+  };
+
+  const finishTyping = (): void => {
+    textareaRef.current?.blur();
+  };
+
   const length = text.replace(/\s/g, "").length;
   const canSubmit = length >= MODE4_REFLECTION_MIN_LENGTH;
+  const reflectionStyle = visualViewportHeight
+    ? ({ "--reflection-visual-height": `${visualViewportHeight}px` } as CSSProperties)
+    : undefined;
+
   return (
-    <main className="mode4-review-screen student-review-screen reflection-review-screen">
+    <main
+      className={`mode4-review-screen student-review-screen reflection-review-screen ${keyboardOpen ? "keyboard-open" : ""}`}
+      style={reflectionStyle}
+    >
       <ReviewHeader eyebrow="4번 게임 · 마지막 기록" title="알게 된 점을 남겨요" detail={`${length} / ${MODE4_REFLECTION_MIN_LENGTH}자`} />
       <section className="reflection-board">
         <div className="reflection-spark" aria-hidden="true"><PixelSpeciesIcon speciesId="clover" /></div>
         <h2>{MODE4_REFLECTION_PROMPT}</h2>
-        <textarea value={text} maxLength={500} onChange={(event) => setText(event.target.value)} placeholder="먹이사슬과 먹이그물을 관찰하며 알게 된 점을 써 보세요." />
+        <div className="reflection-input-wrap">
+          <div className="reflection-input-toolbar">
+            <span>기록 입력</span>
+            <strong>{length} / {MODE4_REFLECTION_MIN_LENGTH}자</strong>
+            <button type="button" className="reflection-keyboard-done" onClick={finishTyping}>입력 완료</button>
+          </div>
+          <textarea
+            ref={textareaRef}
+            value={text}
+            maxLength={500}
+            enterKeyHint="done"
+            onChange={(event) => setText(event.target.value)}
+            onFocus={handleTextareaFocus}
+            onBlur={handleTextareaBlur}
+            placeholder="먹이사슬과 먹이그물을 관찰하며 알게 된 점을 써 보세요."
+            aria-label="알게 된 점"
+          />
+        </div>
         <div className="reflection-meter"><span style={{ width: `${Math.min(100, (length / MODE4_REFLECTION_MIN_LENGTH) * 100)}%` }} /></div>
         <div className="reflection-actions">
           <small>{canSubmit ? "작성한 내용을 제출할 수 있어요." : `${MODE4_REFLECTION_MIN_LENGTH - length}자 더 써 보세요.`}</small>

@@ -8,6 +8,7 @@ import {
   PHASE_LABELS,
   PLANT_SPAWN_POINTS,
   ROLE_DISTRIBUTION_23,
+  ROLE_REVEAL_DURATION_MS,
   SPECIES,
   SPAWN_POINTS,
   WRONG_FOOD_STUN_MS,
@@ -1283,17 +1284,17 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.shrinkStage = 0;
     if (phase === "role_reveal") {
       const revealStartedAt = Date.now();
-      this.state.roleRevealEndsAt = revealStartedAt + 10000;
+      this.state.roleRevealEndsAt = revealStartedAt + ROLE_REVEAL_DURATION_MS;
       this.state.timeRemainingMs = 0;
       this.pausedAt = 0;
       if (this.currentMode) {
         // Reserve the whole mode window from the moment the briefing opens.
         this.reconnectEnabled = true;
         this.modeStartedAt = revealStartedAt;
-        this.modeEndsAt = revealStartedAt + 10000 + this.currentMode.durationMs;
+        this.modeEndsAt = revealStartedAt + ROLE_REVEAL_DURATION_MS + this.currentMode.durationMs;
         this.roleRevealTimer = setTimeout(() => {
           if (this.state.phase === "role_reveal") this.transitionTo("mode_play");
-        }, 10000);
+        }, ROLE_REVEAL_DURATION_MS);
       }
       this.sendAllRoleBriefings();
     } else if (phase === "mode_play") {
