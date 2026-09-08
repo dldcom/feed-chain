@@ -28,8 +28,6 @@ import {
   nextPhase,
   relationKey,
   roleSlotsForMode,
-  roundedScore,
-  scoreForRelation,
   simulateEcosystem,
   MODE4_QUIZ_QUESTIONS,
   MODE4_REFLECTION_MIN_LENGTH,
@@ -106,7 +104,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   });
   private teacherToken = "";
   private teacherSessionId = "";
-  private discoveredByPlayer = new Map<string, Set<string>>();
   private lastEatAt = new Map<string, number>();
   private disconnectedAt = new Map<string, number>();
   private disconnectedModeInstance = new Map<string, number>();
@@ -220,7 +217,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       player.populationCount = 0;
     }
     this.state.players.set(client.sessionId, player);
-    this.discoveredByPlayer.set(client.sessionId, new Set());
     if (player.status === "active") this.lifeStartedAt.set(client.sessionId, Date.now());
     else this.lifeStartedAt.delete(client.sessionId);
     this.refreshPopulationState();
@@ -300,7 +296,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     }
 
     this.state.players.delete(client.sessionId);
-    this.discoveredByPlayer.delete(client.sessionId);
     this.lastEatAt.delete(client.sessionId);
     this.disconnectedAt.delete(client.sessionId);
     this.disconnectedModeInstance.delete(client.sessionId);
@@ -513,21 +508,11 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     attacker.hunger = Math.min(100, attacker.hunger + 34);
     attacker.successfulEats += 1;
     this.increasePopulation(attacker);
-    const key = relationKey(preySpecies, attacker.species);
-    const discoveries = this.discoveredByPlayer.get(client.sessionId) ?? new Set<string>();
-    const seenBefore = discoveries.has(key);
-    discoveries.add(key);
-    this.discoveredByPlayer.set(client.sessionId, discoveries);
-    attacker.score = roundedScore(attacker.score + scoreForRelation(seenBefore));
     this.recordObservedRelation(preySpecies, attacker.species);
     if (this.state.phase === "experiment_a" && !this.currentMode) this.advancePlayerReproduction(attacker, now);
     this.broadcast("action_effect", { kind: "eat", actorId: attacker.id, targetId: input.targetId });
     this.broadcast("action_effect", { kind: "population", actorId: attacker.id, targetId: input.targetId, delta: 1, species: attacker.species as SpeciesId });
     this.refreshPopulationState();
-    client.send("notice", {
-      kind: "success",
-      text: seenBefore ? "먹이 관계를 다시 확인했어요! +0.1" : "새로운 먹이 관계 발견! +2",
-    });
   }
 
   private consumePlayer(target: PlayerState, now: number): void {
@@ -1129,7 +1114,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.mealsSinceBirth.clear();
     this.npcWander.clear();
     this.lastEatAt.clear();
-    this.discoveredByPlayer.forEach((set) => set.clear());
     this.modeTimeline = [];
     this.nextTimelineAt = MODE_TIMELINE_INTERVAL_MS;
     this.state.modeElapsedMs = 0;
@@ -1163,7 +1147,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       player.status = mode.playableSpecies.includes(player.species as PlayableSpeciesId) ? "active" : "extinct";
       player.populationCount = player.status === "active" ? 1 : 0;
       player.lastFoodAt = now;
-      player.score = 0;
       player.eatAttempts = 0;
       player.successfulEats = 0;
       player.timesEaten = 0;
@@ -1475,7 +1458,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.quizAnswerHistory.clear();
     this.reflectionNotes.clear();
     this.state.players.forEach((player) => {
-      player.score = 0;
       player.status = "active";
       player.hunger = 100;
       player.wrongUntil = 0;
@@ -1499,7 +1481,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     });
     this.lifeStartedAt.clear();
     this.lastEatAt.clear();
-    this.discoveredByPlayer.forEach((set) => set.clear());
     this.currentMode = null;
     this.modeTimeline = [];
     this.nextTimelineAt = 0;
@@ -1916,7 +1897,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       players: [...this.state.players.values()].map((player) => ({
         name: player.name,
         species: player.species,
-        score: player.score,
         balance: {
           eatAttempts: player.eatAttempts,
           successfulEats: player.successfulEats,

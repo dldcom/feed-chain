@@ -12,7 +12,6 @@ export class PlayerState extends Schema {
   @type("number") moveSpeed = 0;
   @type("number") boundsStage = 0;
   @type("string") status = "active";
-  @type("number") score = 0;
   @type("number") hunger = 100;
   @type("number") wrongUntil = 0;
   @type("number") eatReadyAt = 0;

@@ -22,7 +22,6 @@ function statusFor(speciesId: PlayableSpeciesId, modeId: GameModeId): GameTestSt
     eatRemainingMs: 0,
     wrongRemainingMs: 0,
     hunger: 100,
-    score: 0,
     discovered: 0,
     totalRelations: mode.relations.filter((edge) => edge.predator === speciesId || edge.prey === speciesId).length,
     timeRemainingMs: 10000,
@@ -65,7 +64,6 @@ export function RoleRevealScreen(): JSX.Element {
   const hudState: GameHudTestState = useMemo(() => ({
     speciesId,
     hunger: status.hunger,
-    score: status.score,
     timeRemainingMs: revealEndsAt > 0 ? Math.max(0, revealEndsAt - now) : status.timeRemainingMs,
     roundNumber: status.modeNumber,
     shrinkStage: 0,

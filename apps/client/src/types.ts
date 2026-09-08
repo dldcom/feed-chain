@@ -11,7 +11,6 @@ export interface PlayerSnapshot {
   moveSpeed: number;
   boundsStage: number;
   status: string;
-  score: number;
   hunger: number;
   wrongUntil: number;
   eatReadyAt: number;

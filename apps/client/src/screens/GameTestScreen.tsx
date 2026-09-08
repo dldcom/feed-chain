@@ -13,7 +13,6 @@ const INITIAL_STATUS: GameTestStatus = {
   eatRemainingMs: 0,
   wrongRemainingMs: 0,
   hunger: 100,
-  score: 0,
   discovered: 0,
   totalRelations: 1,
   timeRemainingMs: 5 * 60 * 1000,
@@ -42,7 +41,6 @@ export function GameTestScreen(): JSX.Element {
   const hudState: GameHudTestState = {
     speciesId,
     hunger: status.hunger,
-    score: status.score,
     timeRemainingMs: status.timeRemainingMs,
     roundNumber: status.modeNumber,
     shrinkStage: 0,

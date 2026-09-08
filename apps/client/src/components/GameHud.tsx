@@ -17,7 +17,6 @@ import { PixelSpeciesIcon } from "./PixelSpeciesIcon";
 export interface GameHudTestState {
   speciesId: string;
   hunger: number;
-  score: number;
   timeRemainingMs: number;
   roundNumber: number;
   shrinkStage: number;
@@ -125,10 +124,6 @@ export function GameHud({ testState }: { testState?: GameHudTestState } = {}): J
         <small>{modeTitle ? `${modeNumber ? `${modeNumber}판 · ` : ""}${modeTitle}` : (testState?.roundNumber ?? snapshot.roundNumber) ? `${testState?.roundNumber ?? snapshot.roundNumber}판` : "생태계 실험"}</small>
         <strong>{formatTime(testState?.timeRemainingMs ?? snapshot.timeRemainingMs)}</strong>
         {(testState?.shrinkStage ?? snapshot.shrinkStage) > 0 && <span>서식 공간 축소 {testState?.shrinkStage ?? snapshot.shrinkStage}/2</span>}
-      </div>
-
-      <div className="hud-top-right">
-        <div className="score-chip"><span>점수</span><strong>{(testState?.score ?? player?.score ?? 0).toFixed(1)}</strong></div>
       </div>
 
       <VirtualJoystick onInput={testState?.onInput} />

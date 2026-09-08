@@ -1,5 +1,3 @@
-export const SCORE_FIRST_RELATION = 2;
-export const SCORE_REPEAT_RELATION = 0.1;
 export const WRONG_FOOD_STUN_MS = 2000;
 export const GHOST_DURATION_MS = 10000;
 export const EAT_COOLDOWN_MS = 800;
@@ -48,12 +46,4 @@ export function isWithinEatServerReach(
     EAT_SERVER_RANGE,
     EAT_SERVER_CONE_COS,
   );
-}
-
-export function scoreForRelation(discoveredBefore: boolean): number {
-  return discoveredBefore ? SCORE_REPEAT_RELATION : SCORE_FIRST_RELATION;
-}
-
-export function roundedScore(score: number): number {
-  return Math.round(score * 10) / 10;
 }

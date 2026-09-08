@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as shared from "@feed-chain/shared";
 import {
   CANONICAL_FOOD_RELATIONS,
   GAME_MODE_CONFIGS,
@@ -19,7 +20,6 @@ import {
   modeConfig,
   roleQuotaForMode,
   roleSlotsForMode,
-  scoreForRelation,
   simulateEcosystem,
 } from "@feed-chain/shared";
 
@@ -77,23 +77,26 @@ describe("먹이 관계 규칙", () => {
     expect(removedApexSlots.filter((speciesId) => SPECIES[speciesId].level === "apex")).toHaveLength(3);
   });
 
-  it("새 관계에 반복 관계보다 큰 점수를 준다", () => {
-    expect(scoreForRelation(false)).toBe(2);
-    expect(scoreForRelation(true)).toBe(0.1);
+  it("점수 기능을 공개하지 않는다", () => {
+    expect("SCORE_FIRST_RELATION" in shared).toBe(false);
+    expect("SCORE_REPEAT_RELATION" in shared).toBe(false);
+    expect("scoreForRelation" in shared).toBe(false);
+    expect("roundedScore" in shared).toBe(false);
   });
 
   it("네 가지 수업 모드의 핵심 종과 시간을 고정한다", () => {
-    expect(GAME_MODE_CONFIGS.chain_observe.durationMs).toBe(10 * 1000);
+    expect(GAME_MODE_CONFIGS.chain_observe.durationMs).toBe(5 * 60 * 1000);
     expect(GAME_MODE_CONFIGS.chain_observe.activeSpecies).toEqual(["hawk", "frog", "caterpillar", "clover"]);
+    expect(GAME_MODE_CONFIGS.chain_removal.durationMs).toBe(3 * 60 * 1000);
     expect(GAME_MODE_CONFIGS.chain_removal.playableSpecies).toEqual(["hawk", "caterpillar"]);
     expect(GAME_MODE_CONFIGS.chain_removal.npc).toEqual([{ species: "frog", count: 1, breedingEnabled: true, respawnWhenExtinct: true }]);
     expect(GAME_MODE_CONFIGS.chain_removal.starvationTimeoutMs).toBe(60 * 1000);
     expect(GAME_MODE_CONFIGS.chain_removal.respawnDelayMs).toBe(3000);
     expect(GAME_MODE_CONFIGS.chain_removal.starvationRespawnDelayMs).toBe(10000);
     expect(GAME_MODE_CONFIGS.chain_removal.ghostDurationMs).toBe(10000);
-    expect(GAME_MODE_CONFIGS.web_observe.durationMs).toBe(10 * 1000);
+    expect(GAME_MODE_CONFIGS.web_observe.durationMs).toBe(5 * 60 * 1000);
     expect(GAME_MODE_CONFIGS.web_observe.activeSpecies).toHaveLength(14);
-    expect(GAME_MODE_CONFIGS.web_removal.durationMs).toBe(10 * 1000);
+    expect(GAME_MODE_CONFIGS.web_removal.durationMs).toBe(3 * 60 * 1000);
     expect(GAME_MODE_CONFIGS.web_removal.starvationTimeoutMs).toBe(60 * 1000);
   });
 

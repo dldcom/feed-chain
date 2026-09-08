@@ -75,7 +75,6 @@ export interface GameTestStatus {
   eatRemainingMs: number;
   wrongRemainingMs: number;
   hunger: number;
-  score: number;
   discovered: number;
   totalRelations: number;
   timeRemainingMs: number;
@@ -120,7 +119,6 @@ export class GameTestScene extends Phaser.Scene {
   private eatReadyAt = 0;
   private wrongUntil = 0;
   private hunger = 100;
-  private score = 0;
   private discoveredFoods = new Set<SpeciesId>();
   private speciesAction: "sick" | "snatch" | null = null;
   private speciesActionTimer?: Phaser.Time.TimerEvent;
@@ -231,7 +229,6 @@ export class GameTestScene extends Phaser.Scene {
     this.eatReadyAt = 0;
     this.wrongUntil = 0;
     this.hunger = 100;
-    this.score = 0;
     this.populationCount = 1;
     this.playerStatus = "active";
     this.discoveredFoods.clear();
@@ -256,7 +253,6 @@ export class GameTestScene extends Phaser.Scene {
     this.eatReadyAt = 0;
     this.wrongUntil = 0;
     this.hunger = 100;
-    this.score = 0;
     this.discoveredFoods.clear();
     this.stopSpeciesAction();
     this.populationCount = 1;
@@ -301,9 +297,7 @@ export class GameTestScene extends Phaser.Scene {
     }
     this.eatReadyAt = this.time.now + EAT_COOLDOWN_MS;
     if (canEat(this.speciesId, target.speciesId)) {
-      const firstDiscovery = !this.discoveredFoods.has(target.speciesId);
       this.discoveredFoods.add(target.speciesId);
-      this.score = Math.round((this.score + (firstDiscovery ? 2 : 0.1)) * 10) / 10;
       this.hunger = Math.min(100, this.hunger + 28);
       this.populationCount = Math.min(99, this.populationCount + 1);
       target.active = false;
@@ -312,7 +306,7 @@ export class GameTestScene extends Phaser.Scene {
         target.active = true;
         target.visual.setVisible(true);
       });
-      this.burst(0xffdf65, firstDiscovery ? "새 먹이 발견!" : "냠!");
+      this.burst(0xffdf65, "냠!");
     } else {
       this.wrongUntil = this.time.now + 2000;
       this.hunger = Math.max(0, this.hunger - 12);
@@ -586,7 +580,6 @@ export class GameTestScene extends Phaser.Scene {
       eatRemainingMs: Math.max(0, this.eatReadyAt - time),
       wrongRemainingMs: Math.max(0, this.wrongUntil - time),
       hunger: this.hunger,
-      score: this.score,
       discovered: this.discoveredFoods.size,
       totalRelations: config.relations.filter((edge) => edge.predator === this.speciesId).length,
       timeRemainingMs: Math.max(0, config.durationMs - elapsed),

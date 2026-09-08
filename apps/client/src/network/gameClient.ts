@@ -67,7 +67,6 @@ function serializeState(state: any): GameSnapshot {
       moveSpeed: player.moveSpeed,
       boundsStage: player.boundsStage,
       status: player.status,
-      score: player.score,
       hunger: player.hunger,
       wrongUntil: player.wrongUntil,
       eatReadyAt: player.eatReadyAt,
