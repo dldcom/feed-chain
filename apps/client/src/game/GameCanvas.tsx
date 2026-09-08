@@ -3,6 +3,9 @@ import Phaser from "phaser";
 import { WORLD_HEIGHT, WORLD_WIDTH } from "@feed-chain/shared";
 import { GameScene } from "./GameScene";
 
+const LOW_RESOLUTION_WIDTH = 960;
+const LOW_RESOLUTION_HEIGHT = 540;
+
 export function GameCanvas(): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
 
@@ -11,11 +14,17 @@ export function GameCanvas(): JSX.Element {
     const game = new Phaser.Game({
       type: Phaser.AUTO,
       parent: host.current,
-      width: 1280,
-      height: 720,
+      width: LOW_RESOLUTION_WIDTH,
+      height: LOW_RESOLUTION_HEIGHT,
       backgroundColor: "#83c867",
       physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
-      scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH, width: "100%", height: "100%" },
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        autoRound: true,
+        width: LOW_RESOLUTION_WIDTH,
+        height: LOW_RESOLUTION_HEIGHT,
+      },
       scene: [GameScene],
       render: { antialias: false, pixelArt: true, roundPixels: true },
     });

@@ -55,8 +55,14 @@ export function createWorldBushes(scene: Phaser.Scene, prefix = ""): WorldBushVi
 }
 
 /** Updates the local canopy alpha and returns the viewer's current cover id. */
-export function updateWorldBushes(bushes: WorldBushVisualMap, viewerX: number, viewerY: number): string | null {
+export function updateWorldBushes(
+  bushes: WorldBushVisualMap,
+  viewerX: number,
+  viewerY: number,
+  previousCoverId?: string | null,
+): string | null {
   const viewerCoverId = coverIdAt(viewerX, viewerY);
+  if (viewerCoverId === previousCoverId) return viewerCoverId;
   bushes.forEach((bush) => {
     bush.container.setAlpha(bush.id === viewerCoverId ? BUSH_CANOPY_ALPHA : 1);
   });

@@ -60,6 +60,11 @@ interface PlayerVisual {
   speciesId: string;
   speciesAction: "sick" | "snatch" | null;
   speciesActionTimer?: Phaser.Time.TimerEvent;
+  lastMovementTextureKey: string;
+  lastMovementFrame: number;
+  lastSpriteY: number;
+  lastShieldedSpecies: string;
+  lastShielded: boolean | null;
 }
 
 interface AnimalVisual {
@@ -73,9 +78,14 @@ interface AnimalVisual {
   facingX: number;
   facingY: number;
   facingChangedAt: number;
+  lastMovementTextureKey: string;
+  lastMovementFrame: number;
+  lastSpriteY: number;
 }
 
 const NPC_FACING_CHANGE_HOLD_MS = 220;
+const EAT_TARGET_REFRESH_MS = 75;
+const LOW_RESOLUTION_CAMERA_ZOOM = 0.75;
 
 export class GameScene extends Phaser.Scene {
   private players = new Map<string, PlayerVisual>();
@@ -88,6 +98,15 @@ export class GameScene extends Phaser.Scene {
   private lastShrinkStage = -1;
   private targetRing?: Phaser.GameObjects.Arc;
   private lastEffectId = 0;
+  private lastPlayerList: PlayerSnapshot[] | null = null;
+  private lastPlantList: PlantSnapshot[] | null = null;
+  private lastAnimalList: AnimalSnapshot[] | null = null;
+  private lastViewerCoverId: string | null | undefined;
+  private nextEatTargetUpdateAt = 0;
+  private lastEatTargetId: string | null = null;
+  private lastEatTargetX = Number.NaN;
+  private lastEatTargetY = Number.NaN;
+  private lastHasSelf: boolean | null = null;
 
   constructor() {
     super("ecosystem");
@@ -151,28 +170,38 @@ export class GameScene extends Phaser.Scene {
     const viewerPose = self ? movementLogicPose(state.selfId) ?? self : undefined;
     const viewerX = viewerPose?.x ?? self?.x ?? WORLD_WIDTH / 2;
     const viewerY = viewerPose?.y ?? self?.y ?? WORLD_HEIGHT / 2;
-    updateWorldBushes(this.bushes, viewerX, viewerY);
+    this.lastViewerCoverId = updateWorldBushes(this.bushes, viewerX, viewerY, this.lastViewerCoverId);
 
     this.syncPlayers(state.snapshot.players, state.selfId, viewerX, viewerY);
-    this.syncPlants(state.snapshot.plants);
+    if (state.snapshot.plants !== this.lastPlantList) {
+      this.lastPlantList = state.snapshot.plants;
+      this.syncPlants(state.snapshot.plants);
+    }
     this.syncAnimals(state.snapshot.animals, viewerX, viewerY);
-    this.syncEatTarget(state.snapshot.players, state.snapshot.plants, state.snapshot.animals, state.selfId, viewerX, viewerY);
+    if (this.time.now >= this.nextEatTargetUpdateAt) {
+      this.nextEatTargetUpdateAt = this.time.now + EAT_TARGET_REFRESH_MS;
+      this.syncEatTarget(state.snapshot.players, state.snapshot.plants, state.snapshot.animals, state.selfId, viewerX, viewerY);
+    }
     if (state.effect && state.effect.id !== this.lastEffectId) {
       this.lastEffectId = state.effect.id;
       this.playActionEffect(state.effect.kind, state.effect.actorId, state.effect.targetId, state.effect.delta);
     }
     this.drawShrinkBoundary(state.snapshot.shrinkStage);
-    if (!state.selfId || !state.snapshot.players.some((player) => player.id === state.selfId)) {
-      this.cameras.main.stopFollow();
-      this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
-      this.cameras.main.setZoom(Math.min(this.scale.width / WORLD_WIDTH, this.scale.height / WORLD_HEIGHT) * 0.94);
-    } else {
-      this.cameras.main.setZoom(1);
+    const hasSelf = Boolean(self);
+    if (!hasSelf) {
+      if (this.lastHasSelf !== false) {
+        this.cameras.main.stopFollow();
+        this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+      }
+      const overviewZoom = Math.min(this.scale.width / WORLD_WIDTH, this.scale.height / WORLD_HEIGHT) * 0.94;
+      if (this.cameras.main.zoom !== overviewZoom) this.cameras.main.setZoom(overviewZoom);
+    } else if (this.cameras.main.zoom !== LOW_RESOLUTION_CAMERA_ZOOM) {
+      this.cameras.main.setZoom(LOW_RESOLUTION_CAMERA_ZOOM);
     }
+    this.lastHasSelf = hasSelf;
 
     this.players.forEach((visual) => {
-      visual.container.x = visual.targetX;
-      visual.container.y = visual.targetY;
+      if (visual.container.x !== visual.targetX || visual.container.y !== visual.targetY) visual.container.setPosition(visual.targetX, visual.targetY);
     });
   }
 
@@ -199,14 +228,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncPlayers(players: PlayerSnapshot[], selfId: string, viewerX: number, viewerY: number): void {
-    const ids = new Set(players.map((player) => player.id));
-    this.players.forEach((visual, id) => {
-      if (!ids.has(id)) {
-        this.stopSpeciesAction(visual, false);
-        visual.container.destroy(true);
-        this.players.delete(id);
-      }
-    });
+    if (players !== this.lastPlayerList) {
+      this.lastPlayerList = players;
+      const ids = new Set(players.map((player) => player.id));
+      this.players.forEach((visual, id) => {
+        if (!ids.has(id)) {
+          this.stopSpeciesAction(visual, false);
+          visual.container.destroy(true);
+          this.players.delete(id);
+        }
+      });
+    }
 
     players.forEach((player) => {
       const renderPosition = movementRenderPose(player.id) ?? player;
@@ -235,6 +267,8 @@ export class GameScene extends Phaser.Scene {
           container, emoji, speciesSprite, label, population, status,
           targetX: renderPosition.x, targetY: renderPosition.y,
           speciesId: player.species, speciesAction: null,
+           lastMovementTextureKey: "", lastMovementFrame: -1, lastSpriteY: Number.NaN,
+           lastShieldedSpecies: "", lastShielded: null,
         };
         this.players.set(player.id, visual);
         if (player.id === selfId) this.cameras.main.startFollow(container, true, 0.3, 0.3);
@@ -242,18 +276,22 @@ export class GameScene extends Phaser.Scene {
       const moving = Math.hypot(renderPosition.x - visual.targetX, renderPosition.y - visual.targetY) > 0.05;
       visual.targetX = renderPosition.x;
       visual.targetY = renderPosition.y;
-      visual.label.setText(player.name);
-      visual.population.setText(`X${Math.max(0, player.populationCount)}`);
+      const populationText = `X${Math.max(0, player.populationCount)}`;
+      if (visual.label.text !== player.name) visual.label.setText(player.name);
+      if (visual.population.text !== populationText) visual.population.setText(populationText);
       this.updatePlayerSpeciesVisual(visual, player.species, renderPosition.facingX, renderPosition.facingY, moving);
       this.updateCaterpillarShieldVisual(visual, player.species, player.shielded);
-      visual.container.setAlpha(player.status === "ghost" || player.status === "respawning" ? 0.45 : player.status === "extinct" ? 0.2 : player.stealth ? 0.25 : 1);
-      visual.container.setScale(player.shielded ? 0.82 : 1);
-      visual.container.setVisible(
-        player.id === selfId || (player.status !== "ghost" && canSeeThroughCover(viewerX, viewerY, renderPosition.x, renderPosition.y)),
-      );
-      visual.status.setText(player.wrongUntil > Date.now() ? "배탈" : player.shielded ? "방어" : player.escapeUntil > Date.now() ? "탈출" : player.status === "respawning" ? "재등장" : player.status === "ghost" ? "관찰자" : player.status === "extinct" ? "관찰 중" : "");
-      if (isSpriteSpecies(player.species) && hasSickSprite(player.species) && player.wrongUntil > Date.now()) {
-        if (visual.speciesAction !== "sick") this.playSpeciesSick(visual, player.species, renderPosition.facingX, renderPosition.facingY, player.wrongUntil - Date.now());
+      const alpha = player.status === "ghost" || player.status === "respawning" ? 0.45 : player.status === "extinct" ? 0.2 : player.stealth ? 0.25 : 1;
+      if (visual.container.alpha !== alpha) visual.container.setAlpha(alpha);
+      const scale = player.shielded ? 0.82 : 1;
+      if (visual.container.scaleX !== scale || visual.container.scaleY !== scale) visual.container.setScale(scale);
+      const visible = player.id === selfId || (player.status !== "ghost" && canSeeThroughCover(viewerX, viewerY, renderPosition.x, renderPosition.y));
+      if (visual.container.visible !== visible) visual.container.setVisible(visible);
+      const now = Date.now();
+      const statusText = player.wrongUntil > now ? "배탈" : player.shielded ? "방어" : player.escapeUntil > now ? "탈출" : player.status === "respawning" ? "재등장" : player.status === "ghost" ? "관찰자" : player.status === "extinct" ? "관찰 중" : "";
+      if (visual.status.text !== statusText) visual.status.setText(statusText);
+      if (isSpriteSpecies(player.species) && hasSickSprite(player.species) && player.wrongUntil > now) {
+        if (visual.speciesAction !== "sick") this.playSpeciesSick(visual, player.species, renderPosition.facingX, renderPosition.facingY, player.wrongUntil - now);
       } else if (visual.speciesAction === "sick") {
         this.stopSpeciesAction(visual);
       }
@@ -279,19 +317,22 @@ export class GameScene extends Phaser.Scene {
         container = createPlantVisual(this, plant.species, plant.x, plant.y);
         this.plants.set(plant.id, container);
       }
-      container.setPosition(plant.x, plant.y);
-      container.setVisible(plant.active);
+      if (container.x !== plant.x || container.y !== plant.y) container.setPosition(plant.x, plant.y);
+      if (container.visible !== plant.active) container.setVisible(plant.active);
     });
   }
 
   private syncAnimals(animals: AnimalSnapshot[], viewerX: number, viewerY: number): void {
-    const ids = new Set(animals.map((animal) => animal.id));
-    this.animals.forEach((visual, id) => {
-      if (!ids.has(id)) {
-        visual.container.destroy(true);
-        this.animals.delete(id);
-      }
-    });
+    if (animals !== this.lastAnimalList) {
+      this.lastAnimalList = animals;
+      const ids = new Set(animals.map((animal) => animal.id));
+      this.animals.forEach((visual, id) => {
+        if (!ids.has(id)) {
+          visual.container.destroy(true);
+          this.animals.delete(id);
+        }
+      });
+    }
     animals.forEach((animal) => {
       let visual = this.animals.get(animal.id);
       if (!visual) {
@@ -321,54 +362,77 @@ export class GameScene extends Phaser.Scene {
           facingX: 0,
           facingY: 1,
           facingChangedAt: 0,
+           lastMovementTextureKey: "", lastMovementFrame: -1, lastSpriteY: Number.NaN,
         };
         this.animals.set(animal.id, visual);
       }
+      const now = this.time.now;
       const previousX = visual.targetX;
       const previousY = visual.targetY;
       const deltaX = animal.x - previousX;
       const deltaY = animal.y - previousY;
-      if (Math.hypot(deltaX, deltaY) > 0.05) {
+      const movementDistance = Math.hypot(deltaX, deltaY);
+      const moving = movementDistance > 0.05;
+      if (moving) {
         const nextFacing = spriteDirection(deltaX, deltaY);
         const currentFacing = spriteDirection(visual.facingX, visual.facingY);
-        if (nextFacing === currentFacing || this.time.now - visual.facingChangedAt >= NPC_FACING_CHANGE_HOLD_MS) {
-          if (nextFacing !== currentFacing) visual.facingChangedAt = this.time.now;
+        if (nextFacing === currentFacing || now - visual.facingChangedAt >= NPC_FACING_CHANGE_HOLD_MS) {
+          if (nextFacing !== currentFacing) visual.facingChangedAt = now;
           visual.facingX = deltaX;
           visual.facingY = deltaY;
         }
       }
       visual.targetX = animal.x;
       visual.targetY = animal.y;
-      this.updateAnimalSpeciesVisual(visual, animal.species, Math.hypot(deltaX, deltaY) > 0.05);
-      visual.population.setY(isSpriteSpecies(animal.species) ? -58 : -43);
-      visual.population.setText(`X${Math.max(0, animal.populationCount)}`);
-      visual.container.setAlpha(animal.status === "ghost" || animal.status === "respawning" ? 0.45 : animal.extinct ? 0.2 : 1);
-      visual.container.setVisible(animal.status !== "ghost" && canSeeThroughCover(viewerX, viewerY, animal.x, animal.y));
-      visual.container.x = Phaser.Math.Linear(visual.container.x, visual.targetX, 0.35);
-      visual.container.y = Phaser.Math.Linear(visual.container.y, visual.targetY, 0.35);
+      this.updateAnimalSpeciesVisual(visual, animal.species, moving);
+      const populationY = isSpriteSpecies(animal.species) ? -58 : -43;
+      if (visual.population.y !== populationY) visual.population.setY(populationY);
+      const populationText = `X${Math.max(0, animal.populationCount)}`;
+      if (visual.population.text !== populationText) visual.population.setText(populationText);
+      const alpha = animal.status === "ghost" || animal.status === "respawning" ? 0.45 : animal.extinct ? 0.2 : 1;
+      if (visual.container.alpha !== alpha) visual.container.setAlpha(alpha);
+      const visible = animal.status !== "ghost" && canSeeThroughCover(viewerX, viewerY, animal.x, animal.y);
+      if (visual.container.visible !== visible) visual.container.setVisible(visible);
+      const nextX = Phaser.Math.Linear(visual.container.x, visual.targetX, 0.35);
+      const nextY = Phaser.Math.Linear(visual.container.y, visual.targetY, 0.35);
+      if (visual.container.x !== nextX || visual.container.y !== nextY) visual.container.setPosition(nextX, nextY);
     });
   }
 
   private updateAnimalSpeciesVisual(visual: AnimalVisual, speciesId: string, moving: boolean): void {
-    if (visual.speciesId !== speciesId) {
+    const speciesChanged = visual.speciesId !== speciesId;
+    if (speciesChanged) {
       visual.speciesId = speciesId;
+      visual.lastMovementTextureKey = "";
+      visual.lastMovementFrame = -1;
+      visual.lastSpriteY = Number.NaN;
       const spriteSpecies = isSpriteSpecies(speciesId) ? speciesId : null;
-      visual.emoji.setVisible(!spriteSpecies);
-      visual.speciesSprite.setVisible(Boolean(spriteSpecies));
-      if (spriteSpecies) {
-        visual.speciesSprite.setScale(speciesSpriteScale(spriteSpecies));
-      } else {
-        this.setSpeciesSprite(visual.emoji, speciesId, 44);
-      }
+      if (visual.emoji.visible === Boolean(spriteSpecies)) visual.emoji.setVisible(!spriteSpecies);
+      if (visual.speciesSprite.visible !== Boolean(spriteSpecies)) visual.speciesSprite.setVisible(Boolean(spriteSpecies));
+      if (spriteSpecies) visual.speciesSprite.setScale(speciesSpriteScale(spriteSpecies));
+      else this.setSpeciesSprite(visual.emoji, speciesId, 44);
     }
 
     const spriteSpecies = isSpriteSpecies(speciesId) ? speciesId : null;
     if (!spriteSpecies) return;
+    if (visual.emoji.visible) visual.emoji.setVisible(false);
+    if (!visual.speciesSprite.visible) visual.speciesSprite.setVisible(true);
+    const scale = speciesSpriteScale(spriteSpecies);
+    if (visual.speciesSprite.scaleX !== scale || visual.speciesSprite.scaleY !== scale) visual.speciesSprite.setScale(scale);
     const phase = moving ? Math.floor(this.time.now / 110) % 4 : 0;
-    const hover = isFlyingSpriteSpecies(spriteSpecies) ? Math.sin(this.time.now / 170) * 2 : 0;
-    visual.speciesSprite
-      .setPosition(0, speciesSpriteY(spriteSpecies, -18) + hover)
-      .setTexture(movementTextureKey(spriteSpecies), movementFrame(visual.facingX, visual.facingY, phase));
+    const hover = isFlyingSpriteSpecies(spriteSpecies) ? Math.round(Math.sin(this.time.now / 170) * 2) : 0;
+    const spriteY = speciesSpriteY(spriteSpecies, -18) + hover;
+    if (visual.lastSpriteY !== spriteY) {
+      visual.lastSpriteY = spriteY;
+      visual.speciesSprite.setPosition(0, spriteY);
+    }
+    const textureKey = movementTextureKey(spriteSpecies);
+    const frame = movementFrame(visual.facingX, visual.facingY, phase);
+    if (visual.lastMovementTextureKey !== textureKey || visual.lastMovementFrame !== frame) {
+      visual.lastMovementTextureKey = textureKey;
+      visual.lastMovementFrame = frame;
+      visual.speciesSprite.setTexture(textureKey, frame);
+    }
   }
 
   private syncEatTarget(
@@ -384,7 +448,12 @@ export class GameScene extends Phaser.Scene {
     // rendered pose is intentionally smoothed and may trail the hit position.
     const pose = self ? movementLogicPose(selfId) ?? self : null;
     if (!self || !pose || self.status !== "active") {
-      this.targetRing?.setVisible(false);
+      if (this.lastEatTargetId !== null) {
+        this.lastEatTargetId = null;
+        this.lastEatTargetX = Number.NaN;
+        this.lastEatTargetY = Number.NaN;
+        this.targetRing?.setVisible(false);
+      }
       return;
     }
     const modeId = this.readModeId();
@@ -404,10 +473,21 @@ export class GameScene extends Phaser.Scene {
       .sort((a, b) => a.distance - b.distance);
     const selected = candidates[0]?.target;
     if (!selected) {
-      this.targetRing?.setVisible(false);
+      if (this.lastEatTargetId !== null) {
+        this.lastEatTargetId = null;
+        this.lastEatTargetX = Number.NaN;
+        this.lastEatTargetY = Number.NaN;
+        this.targetRing?.setVisible(false);
+      }
       return;
     }
-    this.targetRing?.setPosition(selected.x, selected.y).setVisible(true);
+    if (this.lastEatTargetId !== selected.id || this.lastEatTargetX !== selected.x || this.lastEatTargetY !== selected.y) {
+      this.lastEatTargetId = selected.id;
+      this.lastEatTargetX = selected.x;
+      this.lastEatTargetY = selected.y;
+      this.targetRing?.setPosition(selected.x, selected.y);
+    }
+    if (!this.targetRing?.visible) this.targetRing?.setVisible(true);
   }
 
   private readModeId(): string {
@@ -484,26 +564,50 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePlayerSpeciesVisual(visual: PlayerVisual, speciesId: string, facingX: number, facingY: number, moving: boolean): void {
-    if (visual.speciesId !== speciesId && visual.speciesAction) this.stopSpeciesAction(visual, false);
-    visual.speciesId = speciesId;
+    const speciesChanged = visual.speciesId !== speciesId;
+    if (speciesChanged && visual.speciesAction) this.stopSpeciesAction(visual, false);
+    if (speciesChanged) {
+      visual.speciesId = speciesId;
+      visual.lastMovementTextureKey = "";
+      visual.lastMovementFrame = -1;
+      visual.lastSpriteY = Number.NaN;
+      visual.lastShieldedSpecies = "";
+      visual.lastShielded = null;
+    }
+
     const spriteSpecies = isSpriteSpecies(speciesId);
-    visual.emoji.setVisible(!spriteSpecies);
-    visual.speciesSprite.setVisible(spriteSpecies);
-    if (spriteSpecies) {
-      visual.speciesSprite.setScale(speciesSpriteScale(speciesId));
-      if (!visual.speciesAction) {
-        const flying = isFlyingSpriteSpecies(speciesId);
-        const phase = moving || flying ? Math.floor(this.time.now / 110) % 4 : 0;
-        const hover = flying ? Math.sin(this.time.now / 170) * 2 : 0;
-        visual.speciesSprite.setPosition(0, speciesSpriteY(speciesId, -18) + hover);
-        visual.speciesSprite.setTexture(movementTextureKey(speciesId), movementFrame(facingX, facingY, phase));
-      }
-    } else {
-      this.setSpeciesSprite(visual.emoji, speciesId, 54);
+    if (visual.emoji.visible === spriteSpecies) visual.emoji.setVisible(!spriteSpecies);
+    if (visual.speciesSprite.visible !== spriteSpecies) visual.speciesSprite.setVisible(spriteSpecies);
+    if (!spriteSpecies) {
+      if (speciesChanged) this.setSpeciesSprite(visual.emoji, speciesId, 54);
+      return;
+    }
+
+    const scale = speciesSpriteScale(speciesId);
+    if (visual.speciesSprite.scaleX !== scale || visual.speciesSprite.scaleY !== scale) visual.speciesSprite.setScale(scale);
+    if (visual.speciesAction) return;
+
+    const flying = isFlyingSpriteSpecies(speciesId);
+    const phase = moving || flying ? Math.floor(this.time.now / 110) % 4 : 0;
+    const hover = flying ? Math.round(Math.sin(this.time.now / 170) * 2) : 0;
+    const spriteY = speciesSpriteY(speciesId, -18) + hover;
+    if (visual.lastSpriteY !== spriteY) {
+      visual.lastSpriteY = spriteY;
+      visual.speciesSprite.setPosition(0, spriteY);
+    }
+    const textureKey = movementTextureKey(speciesId);
+    const frame = movementFrame(facingX, facingY, phase);
+    if (visual.lastMovementTextureKey !== textureKey || visual.lastMovementFrame !== frame) {
+      visual.lastMovementTextureKey = textureKey;
+      visual.lastMovementFrame = frame;
+      visual.speciesSprite.setTexture(textureKey, frame);
     }
   }
 
   private updateCaterpillarShieldVisual(visual: PlayerVisual, speciesId: string, shielded: boolean): void {
+    if (visual.lastShieldedSpecies === speciesId && visual.lastShielded === shielded) return;
+    visual.lastShieldedSpecies = speciesId;
+    visual.lastShielded = shielded;
     const curled = speciesId === "caterpillar" && shielded;
     if (curled) {
       visual.emoji.setTint(0x858585);
@@ -573,6 +677,8 @@ export class GameScene extends Phaser.Scene {
     visual.speciesSprite.setPosition(0, y).setAngle(0);
     visual.speciesAction = null;
     if (restoreIdle && isSpriteSpecies(visual.speciesId)) {
+      visual.lastMovementTextureKey = "";
+      visual.lastMovementFrame = -1;
       visual.speciesSprite.setTexture(movementTextureKey(visual.speciesId), movementFrame(0, 1));
     }
   }
