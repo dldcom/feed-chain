@@ -33,6 +33,7 @@ import {
   simulateEcosystem,
   MODE4_QUIZ_QUESTIONS,
   MODE4_REFLECTION_MIN_LENGTH,
+  type QuizAnswerRecord,
   type QuizAnswerInput,
   type ReflectionSubmitInput,
   type QuizProgress,
@@ -63,12 +64,38 @@ const EXPERIMENT_DURATION_MS = 3 * 60 * 1000;
 const PLANT_RESPAWN_MS = 12000;
 const CLASS_TTL_MS = 24 * 60 * 60 * 1000;
 const LOBBY_RECONNECT_WINDOW_MS = 10 * 60 * 1000;
-// 먹이를 못 찾았을 때 약 111초 후 고갈된다. 1·2판에서는 고갈 시 감속만 적용한다.
+// 먹이를 못 찾았을 때 약 111초 후 hunger가 고갈되고, 모드별 굶주림 규칙은 별도로 적용한다.
 const HUNGER_PER_SECOND = 0.9;
 const CATERPILLAR_ESCAPE_MS = 1500;
 const CATERPILLAR_ESCAPE_SPEED = 1.3;
 const MODE_TIMELINE_INTERVAL_MS = 5000;
 const REVIEW_RECONNECT_WINDOW_MS = 60 * 60 * 1000;
+const NPC_TARGET_ACQUIRE_RANGE = 430;
+const NPC_TARGET_LOSE_RANGE = 560;
+const NPC_TARGET_LOCK_MS = 650;
+const NPC_TARGET_SWITCH_MARGIN = 90;
+const NPC_TURN_RATE_RAD_PER_SECOND = 3.4;
+const NPC_WANDER_MIN_MS = 1800;
+const NPC_WANDER_EXTRA_MS = 2200;
+const NPC_AVOIDANCE_MS = 800;
+
+interface NpcSteeringState {
+  x: number;
+  y: number;
+  desiredX: number;
+  desiredY: number;
+  changeAt: number;
+  targetId: string | null;
+  targetLockUntil: number;
+  avoidUntil: number;
+}
+
+function shortestAngleDelta(from: number, to: number): number {
+  let delta = to - from;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
 
 export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> {
   maxClients = MAX_STUDENT_COUNT + 1;
@@ -85,7 +112,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   private disconnectedModeInstance = new Map<string, number>();
   private experimentSeed = 20260830;
   private mealsSinceBirth = new Map<string, number>();
-  private npcWander = new Map<string, { x: number; y: number; changeAt: number }>();
+  private npcWander = new Map<string, NpcSteeringState>();
   private npcSequence = 0;
   private lifeStartedAt = new Map<string, number>();
   private currentMode: GameModeConfig | null = null;
@@ -112,8 +139,8 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   private roomExpiryTimer?: ReturnType<typeof setTimeout>;
   private roomExpired = false;
   private roleRevealTimer?: ReturnType<typeof setTimeout>;
-  private quizAnswers = new Map<string, number>();
-  private quizAnswerHistory = new Map<string, Map<number, number>>();
+  private quizAnswers = new Map<string, QuizAnswerRecord>();
+  private quizAnswerHistory = new Map<string, Map<number, QuizAnswerRecord>>();
   private reflectionNotes = new Map<string, string>();
 
   onCreate(options: RoomOptions): void {
@@ -246,7 +273,12 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       if (this.state.phase === "role_reveal") this.sendRoleBriefing(client, player);
       else if (isActivePlayPhase(this.state.phase as GamePhase)) this.sendPublicSpecies(client);
       else if (this.state.phase === "mode4_quiz") {
-        client.send("quiz_answer_saved", { questionIndex: this.state.quizQuestionIndex, optionIndex: this.quizAnswers.get(player.id) ?? -1 });
+        const savedAnswer = this.quizAnswers.get(player.id);
+        client.send("quiz_answer_saved", {
+          questionIndex: this.state.quizQuestionIndex,
+          optionIndex: savedAnswer?.optionIndex ?? -1,
+          ...(savedAnswer?.answer !== undefined ? { answer: savedAnswer.answer } : {}),
+        });
         this.sendCurrentQuizReveal(client);
       }
       else if (this.state.phase === "mode4_reflection") client.send("reflection_saved", { submitted: this.reflectionNotes.has(player.id), text: this.reflectionNotes.get(player.id) ?? "" });
@@ -455,8 +487,14 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
 
     if (playerTarget) {
       if (playerTarget.shielded || (playerTarget.stealth && Math.hypot(attacker.x - targetX, attacker.y - targetY) > 30)) {
-        this.broadcast("action_effect", { kind: "blocked", actorId: attacker.id, targetId: playerTarget.id });
-        client.send("notice", { kind: "info", text: playerTarget.shielded ? `${playerTarget.name}이(가) 몸을 단단히 말았어요!` : `${playerTarget.name}이(가) 잠복해서 놓쳤어요!` });
+        if (playerTarget.shielded && playerTarget.species === "caterpillar") {
+          attacker.wrongUntil = Math.max(attacker.wrongUntil, now + WRONG_FOOD_STUN_MS);
+          client.send("action_effect", { kind: "wrong", actorId: attacker.id, targetId: playerTarget.id });
+          client.send("notice", { kind: "warning", text: "몸을 만 애벌레를 먹으려다 배탈이 났어요!" });
+        } else {
+          this.broadcast("action_effect", { kind: "blocked", actorId: attacker.id, targetId: playerTarget.id });
+          client.send("notice", { kind: "info", text: playerTarget.shielded ? `${playerTarget.name}이(가) 몸을 단단히 말았어요!` : `${playerTarget.name}이(가) 잠복해서 놓쳤어요!` });
+        }
         return;
       }
       if (playerTarget.escapeUntil > now) {
@@ -646,6 +684,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     npc.x = position.x;
     npc.y = position.y;
     npc.hunger = 100;
+    npc.wrongUntil = 0;
     npc.lastFoodAt = now;
     npc.reproduceReadyAt = now + 20000;
     npc.populationCount = 1;
@@ -757,13 +796,24 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     const player = this.state.players.get(client.sessionId);
     const question = MODE4_QUIZ_QUESTIONS[this.state.quizQuestionIndex];
     if (!player || !player.connected || !question) return;
-    if (input?.questionId !== question.id || !Number.isInteger(input.optionIndex) || input.optionIndex < 0 || input.optionIndex >= question.options.length) return;
+    if (input?.questionId !== question.id) return;
 
-    this.quizAnswers.set(client.sessionId, input.optionIndex);
-    const history = this.quizAnswerHistory.get(client.sessionId) ?? new Map<number, number>();
-    history.set(this.state.quizQuestionIndex, input.optionIndex);
+    let answer: QuizAnswerRecord;
+    if (question.kind === "text") {
+      const text = typeof input.answer === "string" ? input.answer.replace(/[<>]/g, "").trim().slice(0, 80) : "";
+      if (!text) return;
+      answer = { optionIndex: 0, answer: text };
+    } else {
+      const optionIndex = input.optionIndex;
+      if (typeof optionIndex !== "number" || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= question.options.length) return;
+      answer = { optionIndex };
+    }
+
+    this.quizAnswers.set(client.sessionId, answer);
+    const history = this.quizAnswerHistory.get(client.sessionId) ?? new Map<number, QuizAnswerRecord>();
+    history.set(this.state.quizQuestionIndex, answer);
     this.quizAnswerHistory.set(client.sessionId, history);
-    client.send("quiz_answer_saved", { questionIndex: this.state.quizQuestionIndex, optionIndex: input.optionIndex });
+    client.send("quiz_answer_saved", { questionIndex: this.state.quizQuestionIndex, ...answer });
     this.sendQuizProgress();
   }
 
@@ -788,11 +838,15 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
 
   private sendQuizProgress(client = this.teacherClient()): void {
     if (!client) return;
-    const answers = [...this.state.players.values()].map((player) => ({
-      playerId: player.id,
-      playerName: player.name,
-      optionIndex: this.quizAnswers.get(player.id) ?? null,
-    }));
+    const answers = [...this.state.players.values()].map((player) => {
+      const savedAnswer = this.quizAnswers.get(player.id);
+      return {
+        playerId: player.id,
+        playerName: player.name,
+        optionIndex: savedAnswer?.optionIndex ?? null,
+        ...(savedAnswer?.answer !== undefined ? { answer: savedAnswer.answer } : {}),
+      };
+    });
     const progress: QuizProgress = {
       questionIndex: this.state.quizQuestionIndex,
       submittedCount: answers.filter((answer) => answer.optionIndex !== null).length,
@@ -809,6 +863,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     client.send("quiz_revealed", {
       questionIndex: this.state.quizQuestionIndex,
       correctOption: question.correctOption,
+      ...(question.correctAnswer !== undefined ? { correctAnswer: question.correctAnswer } : {}),
       explanation: question.explanation,
     });
   }
@@ -1558,6 +1613,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
         animal.x = spawn.x;
         animal.y = spawn.y;
         animal.hunger = 100;
+        animal.wrongUntil = 0;
         animal.lastFoodAt = now;
       } else if (animal.status === "ghost" && animal.ghostUntil > 0 && animal.ghostUntil <= now) {
         animal.status = "active";
@@ -1567,6 +1623,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
         animal.x = spawn.x;
         animal.y = spawn.y;
         animal.hunger = 100;
+        animal.wrongUntil = 0;
         animal.lastFoodAt = now;
       }
     });
@@ -1581,7 +1638,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     const species = isPlayableSpeciesId(player.species) ? SPECIES[player.species] : SPECIES.grasshopper;
     const activeSkill: SpeciesDefinition["skill"] = species.skill && player.skillActiveUntil > now ? species.skill : undefined;
     const cannotMove = player.wrongUntil > now || Boolean(activeSkill?.movementLocked);
-    const hungerMultiplier = player.hunger <= 0 ? 0.7 : 1;
+    const hungerMultiplier = player.hunger <= 0 ? 0.8 : 1;
     const escapeMultiplier = player.escapeUntil > now ? CATERPILLAR_ESCAPE_SPEED : 1;
     const skillMultiplier = (activeSkill?.speedMultiplier ?? 1) * escapeMultiplier;
     const ghostMultiplier = player.status === "ghost" ? 1.12 : 1;
@@ -1606,8 +1663,10 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
         player.populationCount = Math.max(0, player.populationCount - 1);
         this.broadcast("action_effect", { kind: "population", actorId: player.id, delta: -1, species: player.species as SpeciesId });
         if (player.populationCount > 0) {
-          player.status = "respawning";
-          player.respawnAt = now + this.currentMode.starvationRespawnDelayMs;
+          player.status = "active";
+          player.respawnAt = 0;
+          player.ghostUntil = 0;
+          this.lifeStartedAt.set(player.id, now);
         } else {
           player.status = "ghost";
           player.ghostUntil = now + this.currentMode.ghostDurationMs;
@@ -1621,14 +1680,16 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   private updateAnimalNpcs(deltaMs: number, now: number): void {
     this.state.animals.forEach((animal) => {
       if (!isPlayableSpeciesId(animal.species) || animal.status !== "active" || animal.extinct) return;
+      if (animal.wrongUntil > now) return;
       animal.hunger = Math.max(0, animal.hunger - HUNGER_PER_SECOND * 0.82 * (deltaMs / 1000));
       const starvationTimeout = this.currentMode?.starvationTimeoutMs ?? 0;
       if (starvationTimeout > 0 && now - animal.lastFoodAt >= starvationTimeout) {
         animal.populationCount = Math.max(0, animal.populationCount - 1);
         this.broadcast("action_effect", { kind: "population", actorId: animal.id, delta: -1, species: animal.species as SpeciesId });
         if (animal.populationCount > 0) {
-          animal.status = "respawning";
-          animal.respawnAt = now + (this.currentMode?.starvationRespawnDelayMs ?? 10000);
+          animal.status = "active";
+          animal.respawnAt = 0;
+          animal.ghostUntil = 0;
         } else if (animal.fixed && this.currentMode?.npc.some((entry) => entry.species === animal.species && !entry.respawnWhenExtinct)) {
           animal.status = "extinct";
           animal.extinct = true;
@@ -1640,33 +1701,122 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
         return;
       }
 
-      const target = this.nearestFoodFor(animal.species, animal.x, animal.y, animal.id);
-      let direction = this.npcWander.get(animal.id);
-      if (target && target.distance < 430) {
-        const length = target.distance || 1;
-        direction = { x: (target.x - animal.x) / length, y: (target.y - animal.y) / length, changeAt: now + 500 };
-      } else if (!direction || direction.changeAt <= now) {
+      let steering = this.npcWander.get(animal.id);
+      if (!steering) {
         const angle = Math.random() * Math.PI * 2;
-        direction = { x: Math.cos(angle), y: Math.sin(angle), changeAt: now + 1800 + Math.random() * 2200 };
+        const x = Math.cos(angle);
+        const y = Math.sin(angle);
+        steering = {
+          x,
+          y,
+          desiredX: x,
+          desiredY: y,
+          changeAt: now + NPC_WANDER_MIN_MS + Math.random() * NPC_WANDER_EXTRA_MS,
+          targetId: null,
+          targetLockUntil: 0,
+          avoidUntil: 0,
+        };
+        this.npcWander.set(animal.id, steering);
       }
-      this.npcWander.set(animal.id, direction);
+
+      // Keep a target for a short moment. Re-selecting the nearest caterpillar
+      // every simulation tick makes the frog zig-zag when several players move
+      // near one another.
+      let target = steering.targetId
+        ? this.nearestFoodFor(animal.species, animal.x, animal.y, animal.id, steering.targetId)
+        : null;
+      if (target && target.distance > NPC_TARGET_LOSE_RANGE) {
+        steering.targetId = null;
+        steering.targetLockUntil = 0;
+        steering.changeAt = 0;
+        target = null;
+      }
+
+      const nearestTarget = this.nearestFoodFor(animal.species, animal.x, animal.y, animal.id);
+      if (!target && nearestTarget && nearestTarget.distance < NPC_TARGET_ACQUIRE_RANGE) {
+        steering.targetId = nearestTarget.id;
+        steering.targetLockUntil = now + NPC_TARGET_LOCK_MS;
+        target = nearestTarget;
+      } else if (
+        target
+        && now >= steering.targetLockUntil
+        && nearestTarget
+        && nearestTarget.id !== target.id
+        && nearestTarget.distance + NPC_TARGET_SWITCH_MARGIN < target.distance
+      ) {
+        steering.targetId = nearestTarget.id;
+        steering.targetLockUntil = now + NPC_TARGET_LOCK_MS;
+        target = nearestTarget;
+      }
 
       if (target && target.distance <= EAT_RANGE * 0.82) {
         if (this.consumeNpcTarget(animal, target.id, target.kind, target.species, now)) return;
+        if (animal.wrongUntil > now) {
+          steering.targetId = null;
+          steering.targetLockUntil = 0;
+          steering.changeAt = animal.wrongUntil;
+          return;
+        }
       }
 
+      if (target && now >= steering.avoidUntil) {
+        const length = target.distance || 1;
+        steering.desiredX = (target.x - animal.x) / length;
+        steering.desiredY = (target.y - animal.y) / length;
+      } else if (!target) {
+        if (steering.targetId) {
+          steering.targetId = null;
+          steering.targetLockUntil = 0;
+          steering.changeAt = 0;
+        }
+        if (steering.changeAt <= now) {
+          const angle = Math.random() * Math.PI * 2;
+          steering.desiredX = Math.cos(angle);
+          steering.desiredY = Math.sin(angle);
+          steering.changeAt = now + NPC_WANDER_MIN_MS + Math.random() * NPC_WANDER_EXTRA_MS;
+        }
+      }
+
+      // Turn toward the desired direction instead of replacing the direction
+      // immediately. At 30Hz this caps a turn to roughly six degrees per tick.
+      const currentAngle = Math.atan2(steering.y, steering.x);
+      const desiredAngle = Math.atan2(steering.desiredY, steering.desiredX);
+      const maxTurn = NPC_TURN_RATE_RAD_PER_SECOND * (deltaMs / 1000);
+      const turn = Math.max(-maxTurn, Math.min(maxTurn, shortestAngleDelta(currentAngle, desiredAngle)));
+      const nextAngle = currentAngle + turn;
+      steering.x = Math.cos(nextAngle);
+      steering.y = Math.sin(nextAngle);
+
       const speed = SPECIES[animal.species].baseSpeed * 0.72;
-      const next = clampToBounds(animal.x + direction.x * speed * (deltaMs / 1000), animal.y + direction.y * speed * (deltaMs / 1000), this.state.shrinkStage);
-      if (!collidesWithObstacle(next.x, animal.y)) animal.x = next.x;
-      else direction.changeAt = 0;
-      if (!collidesWithObstacle(animal.x, next.y)) animal.y = next.y;
-      else direction.changeAt = 0;
+      const distance = speed * (deltaMs / 1000);
+      const rawX = animal.x + steering.x * distance;
+      const rawY = animal.y + steering.y * distance;
+      const next = clampToBounds(rawX, rawY, this.state.shrinkStage);
+      const hitX = Math.abs(next.x - rawX) > 0.001;
+      const hitY = Math.abs(next.y - rawY) > 0.001;
+      const blockedX = collidesWithObstacle(next.x, animal.y);
+      const blockedY = collidesWithObstacle(animal.x, next.y);
+      if (!blockedX) animal.x = next.x;
+      if (!blockedY) animal.y = next.y;
+
+      if (hitX || hitY || blockedX || blockedY) {
+        const turnAngle = hitX || blockedX
+          ? hitY || blockedY
+            ? Math.PI * 0.75
+            : steering.y >= 0 ? -Math.PI / 2 : Math.PI / 2
+          : steering.x >= 0 ? Math.PI / 2 : -Math.PI / 2;
+        const avoidAngle = Math.atan2(steering.y, steering.x) + turnAngle;
+        steering.desiredX = Math.cos(avoidAngle);
+        steering.desiredY = Math.sin(avoidAngle);
+        steering.avoidUntil = now + NPC_AVOIDANCE_MS;
+        steering.changeAt = now + NPC_AVOIDANCE_MS;
+      }
     });
 
     this.refreshPopulationState();
   }
 
-  private nearestFoodFor(species: PlayableSpeciesId, x: number, y: number, selfId: string): { id: string; kind: "plant" | "player" | "animal"; species: string; x: number; y: number; distance: number } | null {
+  private nearestFoodFor(species: PlayableSpeciesId, x: number, y: number, selfId: string, preferredId?: string): { id: string; kind: "plant" | "player" | "animal"; species: string; x: number; y: number; distance: number } | null {
     const candidates: Array<{ id: string; kind: "plant" | "player" | "animal"; species: string; x: number; y: number; distance: number }> = [];
     this.state.plants.forEach((plant) => {
       if (plant.active && this.isSpeciesActiveInMode(plant.species) && this.canEatInCurrentPhase(species, plant.species)) candidates.push({ id: plant.id, kind: "plant", species: plant.species, x: plant.x, y: plant.y, distance: Math.hypot(plant.x - x, plant.y - y) });
@@ -1677,6 +1827,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     this.state.animals.forEach((animal) => {
       if (animal.id !== selfId && animal.status === "active" && !animal.extinct && this.isSpeciesActiveInMode(animal.species) && this.canEatInCurrentPhase(species, animal.species) && canSeeThroughCover(x, y, animal.x, animal.y)) candidates.push({ id: animal.id, kind: "animal", species: animal.species, x: animal.x, y: animal.y, distance: Math.hypot(animal.x - x, animal.y - y) });
     });
+    if (preferredId) return candidates.find((candidate) => candidate.id === preferredId) ?? null;
     return candidates.sort((a, b) => a.distance - b.distance)[0] ?? null;
   }
 
@@ -1687,7 +1838,14 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       this.consumePlant(plant, now);
     } else if (kind === "player") {
       const player = this.state.players.get(targetId);
-      if (!player || !player.connected || player.status !== "active" || player.shielded) return false;
+      if (!player || !player.connected || player.status !== "active") return false;
+      if (player.shielded) {
+        if (player.species === "caterpillar") {
+          predator.wrongUntil = Math.max(predator.wrongUntil, now + WRONG_FOOD_STUN_MS);
+          this.broadcast("action_effect", { kind: "wrong", actorId: predator.id, targetId: player.id });
+        }
+        return false;
+      }
       this.consumePlayer(player, now);
     } else {
       const target = this.state.animals.get(targetId);
@@ -1780,7 +1938,12 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
       currentModeResult: this.state.modeResultJson ? JSON.parse(this.state.modeResultJson) : null,
       modeResults: [...this.completedModeResults],
       mode4Review: {
-        answers: [...this.quizAnswerHistory.entries()].flatMap(([playerId, answers]) => [...answers.entries()].map(([questionIndex, optionIndex]) => ({ playerId, questionIndex, optionIndex }))),
+        answers: [...this.quizAnswerHistory.entries()].flatMap(([playerId, answers]) => [...answers.entries()].map(([questionIndex, answer]) => ({
+          playerId,
+          questionIndex,
+          optionIndex: answer.optionIndex,
+          ...(answer.answer !== undefined ? { answer: answer.answer } : {}),
+        }))),
         reflections: [...this.reflectionNotes.entries()].map(([playerId, text]) => ({ playerId, text })),
       },
       populations: [...this.state.populations.values()].map((population) => ({ species: population.species, count: population.count, peak: population.peak })),

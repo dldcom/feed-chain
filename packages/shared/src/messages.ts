@@ -26,22 +26,28 @@ export interface TeacherCommand {
 
 export interface QuizAnswerInput {
   questionId: string;
-  optionIndex: number;
+  optionIndex?: number;
+  answer?: string;
 }
 
 export interface ReflectionSubmitInput {
   text: string;
 }
 
-export interface QuizAnswerSaved {
-  questionIndex: number;
+export interface QuizAnswerRecord {
   optionIndex: number;
+  answer?: string;
+}
+
+export interface QuizAnswerSaved extends QuizAnswerRecord {
+  questionIndex: number;
 }
 
 export interface QuizProgressEntry {
   playerId: string;
   playerName: string;
   optionIndex: number | null;
+  answer?: string;
 }
 
 export interface QuizProgress {
@@ -54,6 +60,7 @@ export interface QuizProgress {
 export interface QuizReveal {
   questionIndex: number;
   correctOption: number;
+  correctAnswer?: string;
   explanation: string;
 }
 

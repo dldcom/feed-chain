@@ -3,7 +3,7 @@
  * so the teacher and server use exactly the same wording; students only see
  * the correct option after the teacher reveals it.
  */
-export type QuizQuestionKind = "identify" | "choice";
+export type QuizQuestionKind = "text" | "choice";
 
 export interface QuizQuestion {
   id: string;
@@ -12,24 +12,27 @@ export interface QuizQuestion {
   explanation: string;
   options: readonly string[];
   correctOption: number;
+  correctAnswer?: string;
 }
 
 export const MODE4_QUIZ_QUESTIONS: readonly QuizQuestion[] = [
   {
     id: "food-chain-name",
-    kind: "identify",
-    prompt: "풀을 먹는 애벌레, 애벌레를 먹는 개구리, 개구리를 먹는 매가 한 줄로 이어져 있어요. 이것은 무엇일까요?",
+    kind: "text",
+    prompt: "풀 → 애벌레 → 개구리 → 매가 한 줄로 이어진 것은 먹이 ______이다.",
     explanation: "생물이 먹고 먹히는 관계가 한 줄로 이어진 것을 먹이사슬이라고 해요.",
-    options: ["먹이사슬", "먹이그물"],
+    options: [],
     correctOption: 0,
+    correctAnswer: "사슬",
   },
   {
     id: "food-web-name",
-    kind: "identify",
-    prompt: "여러 먹이사슬이 서로 이어져 여러 생물의 관계를 보여 주고 있어요. 이것은 무엇일까요?",
+    kind: "text",
+    prompt: "여러 먹이사슬이 서로 얽혀 있는 것은 먹이 ______이다.",
     explanation: "여러 먹이사슬이 서로 연결된 것을 먹이그물이라고 해요.",
-    options: ["먹이사슬", "먹이그물"],
-    correctOption: 1,
+    options: [],
+    correctOption: 0,
+    correctAnswer: "그물",
   },
   {
     id: "frog-missing-chain",

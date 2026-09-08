@@ -432,12 +432,12 @@ function WebResultScene({
   const focusNode = useMemo(() => [...tourSteps.slice(0, Math.max(1, revealedCount))].reverse().find((step) => step.node)?.node, [tourSteps, revealedCount]);
   const focusPoint = focusNode ? points.get(focusNode) : undefined;
   const cameraStyle = useMemo(() => {
-    if (!focusPoint || opening || zoomOut) return { transform: "translate3d(0, 0, 0) scale(1)" } as CSSProperties;
+    if (!focusPoint || opening || zoomOut || instant || finished) return { transform: "translate3d(0, 0, 0) scale(1)" } as CSSProperties;
     const scale = 1.55;
     const x = ((50 - focusPoint.x) * (scale - 1)).toFixed(2);
     const y = ((50 - focusPoint.y) * (scale - 1)).toFixed(2);
     return { transform: `translate3d(${x}%, ${y}%, 0) scale(${scale})` } as CSSProperties;
-  }, [focusPoint, opening, zoomOut]);
+  }, [finished, focusPoint, instant, opening, zoomOut]);
 
   useEffect(() => {
     if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current);

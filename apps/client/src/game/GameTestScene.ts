@@ -376,6 +376,14 @@ export class GameTestScene extends Phaser.Scene {
       );
     }
     this.atlasSprite.setY(-7 + (moving ? Math.sin(this.hopPhase * Math.PI / 2) * 3 : 0));
+    const curled = this.speciesId === "caterpillar" && skillActive && skill?.id === "curl_up";
+    if (curled) {
+      this.atlasSprite.setTint(0x858585);
+      this.speciesSprite.setTint(0x858585);
+    } else {
+      this.atlasSprite.clearTint();
+      this.speciesSprite.clearTint();
+    }
     const stealth = skillActive && skill?.kind === "stealth";
     this.player.setAlpha(stealth ? 0.32 : 1);
     this.populationLabel.setText(`X${this.populationCount}`);

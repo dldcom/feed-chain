@@ -53,6 +53,7 @@ export interface AnimalSnapshot {
   populationCount: number;
   respawnAt: number;
   ghostUntil: number;
+  wrongUntil: number;
   lastFoodAt: number;
   breedingEnabled: boolean;
   fixed: boolean;

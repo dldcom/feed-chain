@@ -107,6 +107,7 @@ function serializeState(state: any): GameSnapshot {
       populationCount: animal.populationCount ?? 1,
       respawnAt: animal.respawnAt ?? 0,
       ghostUntil: animal.ghostUntil ?? 0,
+      wrongUntil: animal.wrongUntil ?? 0,
       lastFoodAt: animal.lastFoodAt ?? 0,
       breedingEnabled: animal.breedingEnabled ?? true,
       fixed: animal.fixed ?? false,
@@ -268,8 +269,12 @@ export function sendBlueEdge(prey: string, predator: string): void {
   useGameStore.getState().room?.send("blue_edge", { prey, predator });
 }
 
-export function sendQuizAnswer(questionId: string, optionIndex: number): void {
-  useGameStore.getState().room?.send("quiz_answer", { questionId, optionIndex });
+export function sendQuizAnswer(questionId: string, answer: number | string): void {
+  if (typeof answer === "string") {
+    useGameStore.getState().room?.send("quiz_answer", { questionId, answer });
+  } else {
+    useGameStore.getState().room?.send("quiz_answer", { questionId, optionIndex: answer });
+  }
 }
 
 export function sendReflection(text: string): void {

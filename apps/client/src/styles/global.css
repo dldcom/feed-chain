@@ -1,5 +1,19 @@
 @import url('https://cdn.jsdelivr.net/gh/MonadABXY/mona-font/web/mona.css');
 
+@font-face {
+  font-family: 'SchoolSafetyNotification';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-5@1.0/HakgyoansimAllimjangTTF-R.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SchoolSafetyNotification';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-5@1.0/HakgyoansimAllimjangTTF-B.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
 :root {
   font-family: "Mona12", system-ui, sans-serif;
   font-weight: 400;
@@ -25,6 +39,29 @@ button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .55; }
 .app-shell, .screen-slot, main { width: 100%; height: 100%; }
 .app-shell.teacher-mode { display: grid; grid-template-columns: minmax(0, 1fr) 330px; background: #10231f; }
 .teacher-mode .screen-slot { min-width: 0; position: relative; }
+
+.fullscreen-toggle {
+  position: fixed;
+  z-index: 70;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: #fff0a2;
+  background: #173d2de8;
+  border: 2px solid #d9bd52;
+  border-radius: 7px;
+  box-shadow: 0 3px 0 #0b2218aa;
+}
+.fullscreen-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }
+.fullscreen-toggle:hover, .fullscreen-toggle:focus-visible { color: #173c2d; background: #e4ca6b; border-color: #fff0a2; outline: none; }
+.fullscreen-toggle:focus-visible { outline: 3px solid #fff1a8; outline-offset: 2px; }
+.fullscreen-toggle:active { transform: translateY(2px); box-shadow: 0 1px 0 #0b2218aa; }
+.app-shell.has-game-hud .fullscreen-toggle { top: max(66px, calc(env(safe-area-inset-top) + 60px)); }
+.app-shell.has-teacher-panel .fullscreen-toggle { right: calc(330px + max(14px, env(safe-area-inset-right))); }
 
 .landing-screen {
   position: relative;
@@ -67,7 +104,7 @@ button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .55; }
 .game-dialog h2 { margin: 3px 0 20px; text-align: center; font-family: "Mona12"; font-size: 34px; }
 .dialog-icon { display: grid; place-items: center; min-height: 72px; }
 .dialog-icon .pixel-species-icon { width: 72px; height: 72px; }
-.back-button { position: absolute; top: 20px; left: 20px; width: 45px; height: 45px; border-radius: 50%; background: #2c6b49; color: white; font-size: 25px; }
+.back-button { position: absolute; top: 20px; left: 20px; width: 54px; height: 45px; padding: 0; border-radius: 50%; background: #2c6b49; color: white; font-size: 20px; line-height: 1; white-space: nowrap; }
 .game-dialog label { display: block; margin: 13px 0; }
 .game-dialog label span { display: block; margin: 0 0 6px 6px; font-size: 13px; font-weight: 400; color: #4d6f62; }
 .game-dialog input { width: 100%; height: 58px; border: 4px solid #b7a96f; border-radius: 17px; padding: 0 18px; background: #fffef3; color: var(--ink); outline: none; font-weight: 400; font-size: 20px; }
@@ -890,6 +927,16 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .qr-modal img { display: block; width: min(480px, 78vw); image-rendering: pixelated; }
 .qr-modal strong { color: #183c2b; font-family: "Mona12"; font-size: 28px; letter-spacing: 5px; }
 .qr-modal button { padding: 7px 18px; color: #f2e8b9; background: #183e2d; border: 2px solid #416c4c; font-size: 11px; font-weight: 400; }
+.role-assignment-modal-backdrop { position: fixed; z-index: 110; inset: 0; background: #061a1426; }
+.role-assignment-modal { position: fixed; display: grid; gap: 8px; width: min(360px, calc(100vw - 16px)); max-height: min(430px, 82vh); overflow-y: auto; padding: 12px; color: #dceac6; background: #102f25; border: 2px solid #2d5b45; outline: none; }
+.role-assignment-modal h2 { margin: 0; color: #f1d777; font-family: "Mona12"; font-size: 21px; font-weight: 400; }
+.role-assignment-options { display: grid; gap: 5px; }
+.role-assignment-row { display: flex; gap: 5px; width: max-content; min-width: 100%; }
+.role-assignment-option { display: inline-flex; align-items: center; flex: none; gap: 4px; padding: 3px 5px; text-align: left; color: #d6e6c7; background: #153b2e; border: 2px solid #2b5e46; font-size: 9px; font-weight: 400; white-space: nowrap; }
+.role-assignment-option .pixel-species-icon { width: 25px; height: 25px; flex: none; }
+.role-assignment-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-assignment-option.active { color: #173c2a; background: #e6ca68; border-color: #f6e89a; }
+.role-assignment-modal button:focus-visible { outline: 3px solid #fff1a8; outline-offset: 2px; }
 
 .role-practice-screen { display: flex; flex-direction: column; gap: 12px; min-height: 100%; padding: clamp(12px, 2vw, 24px); color: #f0edc7; background: #12372b; }
 .role-practice-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: min(1280px, 100%); margin: 0 auto; }
@@ -1203,6 +1250,11 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .quiz-option.correct { color: #173d2d; background: #a8c675; border-color: #e5efae; }
 .quiz-option.wrong { color: #f1c5a9; background: #543934; border-color: #9a5947; }
 .quiz-option em { position: absolute; top: 4px; right: 7px; color: #17402d; font-size: 9px; font-style: normal; }
+.quiz-text-answer { display: flex; align-items: stretch; gap: 9px; }
+.quiz-text-answer input { min-width: 0; flex: 1; padding: 10px 13px; color: #e5efc9; background: #153c2d; border: 2px solid #477456; outline: none; font-family: "Mona12", sans-serif; font-size: clamp(14px, 1.8vw, 18px); }
+.quiz-text-answer input:focus { border-color: #ffea96; }
+.quiz-text-answer button { flex: none; min-width: 74px; padding: 8px 13px; color: #193d2c; background: #e2cb69; border: 2px solid #967a33; font-family: "Mona12", sans-serif; font-size: 12px; }
+.quiz-text-answer button:disabled { color: #709078; background: #223d31; border-color: #3a5c44; opacity: .7; cursor: not-allowed; }
 .quiz-feedback { min-height: 29px; margin-top: 19px; color: #9fbd9c; font-size: 11px; line-height: 1.5; }
 .quiz-feedback.is-correct { color: #dded9a; }
 .quiz-feedback.is-wrong { color: #e6b69d; }
@@ -1223,6 +1275,16 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .quiz-answer-names { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
 .quiz-answer-names span, .quiz-answer-names small { padding: 4px 6px; color: #b9cfaa; background: #102f25; border: 1px solid #335c44; font-size: 9px; }
 .quiz-answer-names small { color: #76987b; border: 0; }
+.quiz-text-answer-heading { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 7px; border-bottom: 1px solid #3c684c; color: #cbdcb8; font-size: 11px; }
+.quiz-text-answer-heading strong { color: #f1d66e; font-family: "Mona12"; font-size: 18px; font-weight: 400; }
+.quiz-text-answer-list { display: grid; gap: 5px; max-height: 220px; overflow-y: auto; margin-top: 7px; }
+.quiz-text-answer-list > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px; padding: 6px 7px; color: #b9cfaa; background: #153a2d; border: 1px solid #3e6b4b; font-size: 10px; }
+.quiz-text-answer-list > div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quiz-text-answer-list > div strong { overflow: hidden; color: #ffe68a; font-size: 12px; font-weight: 400; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.quiz-text-answer-list > small { color: #76987b; font-size: 10px; }
+.quiz-text-correct-answer { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 7px; padding: 7px; color: #183e2e; background: #b6ce78; border: 1px solid #edf2af; }
+.quiz-text-correct-answer small { font-size: 10px; }
+.quiz-text-correct-answer strong { color: #183e2e; font-family: "Mona12"; font-size: 17px; font-weight: 400; }
 .review-teacher-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; width: min(880px, 100%); margin: 18px auto 0; }
 .review-teacher-actions button { min-height: 36px; padding: 7px 14px; font-family: "Mona12", sans-serif; font-size: 11px; cursor: pointer; }
 .review-primary-action { color: #193d2c; background: #e2cb69; border: 2px solid #967a33; }
@@ -1249,9 +1311,17 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .reflection-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; max-height: 52vh; overflow: auto; padding-top: 11px; }
 .reflection-list article { min-height: 80px; padding: 8px; background: #12382a; border-left: 4px solid #6d8d5a; }
 .reflection-list article.waiting { border-left-color: #385942; opacity: .72; }
+.reflection-list article.clickable { cursor: pointer; }
+.reflection-list article.clickable:hover, .reflection-list article.clickable:focus-visible { background: #1b4937; border-left-color: #e3c966; outline: 2px solid #e3c966; outline-offset: 2px; }
 .reflection-list article strong { color: #dfe9bd; font-size: 10px; }
 .reflection-list article p { margin: 6px 0 0; color: #a9c39f; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
 .reflection-empty { grid-column: 1 / -1; margin: 24px 0; color: #7e9f81; text-align: center; font-size: 11px; }
+.reflection-answer-backdrop { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: 20px; background: #061a14d9; }
+.reflection-answer-modal { width: min(820px, 92vw); max-height: min(720px, 86vh); overflow-y: auto; padding: clamp(18px, 3vw, 30px); color: #dceac6; background: #173d2d; border: 3px solid #dfc861; box-shadow: 7px 7px 0 #081f16; }
+.reflection-answer-modal > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 2px solid #3e6c4c; }
+.reflection-answer-modal h2 { margin: 0; color: #ffe58a; font-family: "Mona12"; font-size: clamp(20px, 3vw, 30px); font-weight: 400; }
+.reflection-answer-modal header button { display: grid; place-items: center; width: 30px; height: 30px; flex: none; color: #f5de82; background: transparent; border: 2px solid #537b58; font-size: 22px; line-height: 1; }
+.reflection-answer-modal > p { margin: 22px 0 4px; color: #e5efc9; font-size: clamp(18px, 2.5vw, 28px); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .lesson-complete-screen { align-items: center; }
 .lesson-complete-board { display: grid; place-items: center; padding: clamp(24px, 6vw, 62px); text-align: center; border: 3px solid #5c855e; background: #0a271fdd; }
 .complete-mark { display: grid; place-items: center; width: 63px; height: 63px; color: #193d2c; background: #e4ca63; border: 3px solid #846c2f; font-family: "Mona12", sans-serif; font-size: 22px; }
@@ -1265,4 +1335,135 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
   .review-teacher-actions button { flex: 1; }
   .reflection-actions { align-items: stretch; flex-direction: column; }
   .reflection-actions button { width: 100%; }
+}
+
+/* Teacher readability ---------------------------------------------------- */
+.teacher-lobby-screen { font-size: 12px; }
+.teacher-lobby-screen .teacher-lobby-header small { font-size: 10px; }
+.teacher-lobby-screen .teacher-lobby-phase span { font-size: 11px; }
+.teacher-lobby-screen .teacher-lobby-phase strong { font-size: 30px; }
+.teacher-lobby-screen .share-card-title span, .teacher-lobby-screen .section-heading span { font-size: 15px; }
+.teacher-lobby-screen .share-card-title strong, .teacher-lobby-screen .section-heading strong { font-size: 23px; }
+.teacher-lobby-screen .teacher-share-card > p { font-size: 12px; }
+.teacher-lobby-screen .teacher-roster button { font-size: 12px; }
+.teacher-lobby-screen .empty-roster { font-size: 12px; }
+.teacher-lobby-screen .teacher-mode-grid button span { font-size: 12px; }
+.teacher-lobby-screen .teacher-mode-grid button small { font-size: 9px; }
+.teacher-lobby-screen .teacher-mode-actions button { font-size: 12px; }
+.teacher-lobby-screen .teacher-secret-note { font-size: 10px; }
+.teacher-lobby-screen .teacher-lobby-footer button { font-size: 10px; }
+
+.teacher-mode .teacher-console-header small { font-size: 11px; }
+.teacher-mode .connection-pill { font-size: 13px; }
+.teacher-mode .current-phase { font-size: 23px; }
+.teacher-mode .player-roster button { font-size: 12px; }
+.teacher-mode .teacher-actions button { font-size: 12px; }
+.teacher-mode .mode-picker > small { font-size: 11px; }
+.teacher-mode .mode-picker-grid button strong { font-size: 14px; }
+.teacher-mode .mode-picker-grid button span { font-size: 10px; }
+
+.teacher-review-screen .review-topbar small { font-size: 11px; }
+.teacher-review-screen .review-topbar h1 { font-size: clamp(28px, 4vw, 48px); }
+.teacher-review-screen .review-topbar > strong { font-size: clamp(16px, 2vw, 22px); }
+.teacher-review-screen .quiz-teacher-question h2 { font-size: clamp(23px, 3vw, 34px); }
+.teacher-review-screen .quiz-teacher-question small { font-size: 12px; }
+.teacher-review-screen .quiz-answer-row { min-height: 48px; font-size: 12px; }
+.teacher-review-screen .quiz-answer-row > b { font-size: 12px; }
+.teacher-review-screen .quiz-answer-row > strong { font-size: 19px; }
+.teacher-review-screen .quiz-student-status { font-size: 12px; }
+.teacher-review-screen .quiz-student-status strong { font-size: 20px; }
+.teacher-review-screen .quiz-answer-names span, .teacher-review-screen .quiz-answer-names small { font-size: 10px; }
+.teacher-review-screen .reflection-list-heading { font-size: 19px; }
+.teacher-review-screen .reflection-list-heading small { font-size: 12px; }
+.teacher-review-screen .reflection-list article strong { font-size: 12px; }
+.teacher-review-screen .reflection-list article p { font-size: 12px; line-height: 1.6; }
+.teacher-review-screen .review-teacher-actions button { font-size: 12px; }
+
+/* Classroom result modals ------------------------------------------------ */
+.result-ranking-backdrop { padding: clamp(12px, 2.5vw, 36px); }
+.result-ranking-modal {
+  width: min(920px, 92vw);
+  max-height: min(860px, 90vh);
+  padding: clamp(24px, 3.4vw, 42px);
+  border-width: 4px;
+  box-shadow: 10px 10px 0 #081f16;
+}
+.result-ranking-modal > header { gap: 22px; padding-bottom: 20px; border-bottom-width: 3px; }
+.result-ranking-modal > header > div:first-child { gap: 18px; }
+.result-modal-icon { width: 82px; height: 82px; border-width: 3px; }
+.result-modal-icon .pixel-species-icon { width: 72px; height: 72px; }
+.result-ranking-modal header small { font-size: 14px; }
+.result-ranking-modal h2 { font-size: clamp(32px, 4vw, 48px); }
+.result-modal-close { width: 48px; height: 48px; border-width: 3px; font-size: 34px; }
+.result-ranking-list { gap: 10px; max-height: 64vh; margin: 22px 0; }
+.result-ranking-list li { grid-template-columns: 48px minmax(0, 1fr) auto auto; gap: 16px; min-height: 64px; padding: 10px 14px; border-width: 2px; }
+.result-rank-number { width: 38px; height: 38px; font-size: 22px; }
+.result-rank-name { font-size: 20px; }
+.result-ranking-list strong { font-size: 26px; }
+.result-ranking-list small { font-size: 14px; }
+.result-ranking-empty { margin: 36px 0; font-size: 16px; }
+.result-modal-done { padding: 14px; border-width: 3px; font-size: 16px; }
+
+.reflection-answer-backdrop { padding: clamp(10px, 2vw, 24px); }
+.reflection-answer-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1440px, 96vw);
+  height: min(900px, 90vh);
+  max-height: 92vh;
+  padding: clamp(28px, 5vw, 64px);
+  border-width: 4px;
+  box-shadow: 10px 10px 0 #081f16;
+}
+.reflection-answer-modal > header { gap: 24px; padding-bottom: clamp(16px, 2vw, 26px); border-bottom-width: 3px; }
+.reflection-answer-modal h2 { font-size: clamp(28px, 4vw, 52px); }
+.reflection-answer-modal header button { width: 48px; height: 48px; border-width: 3px; font-size: 34px; }
+.reflection-answer-modal > p { flex: 1; min-height: 0; margin: clamp(28px, 6vh, 64px) 0 4px; font-size: clamp(26px, 4.3vw, 62px); line-height: 1.6; overflow-y: auto; }
+
+@media (max-width: 540px) {
+  .result-ranking-modal { width: 94vw; max-height: 88vh; padding: 18px; }
+  .result-ranking-modal > header { gap: 12px; padding-bottom: 14px; }
+  .result-ranking-modal > header > div:first-child { gap: 11px; }
+  .result-modal-icon { width: 60px; height: 60px; }
+  .result-modal-icon .pixel-species-icon { width: 52px; height: 52px; }
+  .result-ranking-modal header small { font-size: 10px; }
+  .result-ranking-modal h2 { font-size: 28px; }
+  .result-modal-close { width: 38px; height: 38px; font-size: 27px; }
+  .result-ranking-list { gap: 6px; max-height: 58vh; margin: 14px 0; }
+  .result-ranking-list li { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; min-height: 48px; padding: 7px 8px; }
+  .result-rank-number { width: 28px; height: 28px; font-size: 17px; }
+  .result-rank-name { font-size: 14px; }
+  .result-ranking-list strong { font-size: 19px; }
+  .result-ranking-list small { grid-column: 2 / -1; font-size: 10px; }
+  .result-modal-done { padding: 10px; font-size: 13px; }
+
+  .reflection-answer-modal { width: 94vw; height: 88vh; padding: 22px 18px; }
+  .reflection-answer-modal > header { gap: 12px; padding-bottom: 16px; }
+  .reflection-answer-modal h2 { font-size: 29px; }
+  .reflection-answer-modal header button { width: 40px; height: 40px; font-size: 28px; }
+  .reflection-answer-modal > p { margin-top: 28px; font-size: clamp(24px, 8vw, 38px); line-height: 1.55; }
+}
+
+/* Readable classroom font ----------------------------------------------- */
+.app-shell.teacher-mode,
+.app-shell.teacher-mode *,
+.app-shell.teacher-mode *::before,
+.app-shell.teacher-mode *::after,
+.mode4-review-screen,
+.mode4-review-screen *,
+.mode4-review-screen *::before,
+.mode4-review-screen *::after {
+  font-family: 'SchoolSafetyNotification', system-ui, sans-serif !important;
+}
+.app-shell.teacher-mode h1,
+.app-shell.teacher-mode h2,
+.app-shell.teacher-mode h3,
+.app-shell.teacher-mode strong,
+.app-shell.teacher-mode b,
+.mode4-review-screen h1,
+.mode4-review-screen h2,
+.mode4-review-screen h3,
+.mode4-review-screen strong,
+.mode4-review-screen b {
+  font-weight: 700 !important;
 }

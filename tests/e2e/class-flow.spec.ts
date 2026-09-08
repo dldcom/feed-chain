@@ -28,6 +28,21 @@ test("teacher lobby assigns a private role and opens the practice briefing", asy
 
   await teacher.locator(".teacher-secondary-action").click();
   await expect(teacher.locator(".teacher-roster button .pixel-species-icon")).toHaveCount(1);
+  await teacher.locator(".teacher-roster button").click();
+  const roleModal = teacher.locator(".role-assignment-modal");
+  await expect(roleModal).toBeVisible();
+  await expect(teacher.locator(".teacher-control-card .role-section")).toHaveCount(0);
+  await expect(teacher.locator(".mode-section")).toBeVisible();
+  await teacher.locator(".role-assignment-modal-backdrop").click({ position: { x: 4, y: 4 } });
+  await expect(roleModal).toHaveCount(0);
+
+  await teacher.locator(".teacher-roster button").click();
+  await expect(roleModal).toBeVisible();
+await roleModal.locator(".role-assignment-option").first().click();
+await expect(roleModal.locator(".role-assignment-option.active")).toHaveCount(1);
+  await teacher.keyboard.press("Escape");
+  await expect(roleModal).toHaveCount(0);
+
   await teacher.locator(".teacher-start-action").click();
   await expect(student.locator(".role-practice-screen")).toBeVisible();
   await expect(student.locator(".role-countdown strong")).toBeVisible();

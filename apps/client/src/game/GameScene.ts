@@ -72,7 +72,10 @@ interface AnimalVisual {
   speciesId: string;
   facingX: number;
   facingY: number;
+  facingChangedAt: number;
 }
+
+const NPC_FACING_CHANGE_HOLD_MS = 220;
 
 export class GameScene extends Phaser.Scene {
   private players = new Map<string, PlayerVisual>();
@@ -242,6 +245,7 @@ export class GameScene extends Phaser.Scene {
       visual.label.setText(player.name);
       visual.population.setText(`X${Math.max(0, player.populationCount)}`);
       this.updatePlayerSpeciesVisual(visual, player.species, renderPosition.facingX, renderPosition.facingY, moving);
+      this.updateCaterpillarShieldVisual(visual, player.species, player.shielded);
       visual.container.setAlpha(player.status === "ghost" || player.status === "respawning" ? 0.45 : player.status === "extinct" ? 0.2 : player.stealth ? 0.25 : 1);
       visual.container.setScale(player.shielded ? 0.82 : 1);
       visual.container.setVisible(
@@ -316,6 +320,7 @@ export class GameScene extends Phaser.Scene {
           speciesId: animal.species,
           facingX: 0,
           facingY: 1,
+          facingChangedAt: 0,
         };
         this.animals.set(animal.id, visual);
       }
@@ -323,9 +328,14 @@ export class GameScene extends Phaser.Scene {
       const previousY = visual.targetY;
       const deltaX = animal.x - previousX;
       const deltaY = animal.y - previousY;
-      if (Math.abs(deltaX) + Math.abs(deltaY) > 0.05) {
-        visual.facingX = deltaX;
-        visual.facingY = deltaY;
+      if (Math.hypot(deltaX, deltaY) > 0.05) {
+        const nextFacing = spriteDirection(deltaX, deltaY);
+        const currentFacing = spriteDirection(visual.facingX, visual.facingY);
+        if (nextFacing === currentFacing || this.time.now - visual.facingChangedAt >= NPC_FACING_CHANGE_HOLD_MS) {
+          if (nextFacing !== currentFacing) visual.facingChangedAt = this.time.now;
+          visual.facingX = deltaX;
+          visual.facingY = deltaY;
+        }
       }
       visual.targetX = animal.x;
       visual.targetY = animal.y;
@@ -431,27 +441,33 @@ export class GameScene extends Phaser.Scene {
 
   private playActionEffect(kind: string, actorId: string, targetId?: string, delta = 0): void {
     const actor = this.players.get(actorId);
+    const animalActor = this.animals.get(actorId);
     const actorObject = this.visualObject(actorId);
     const target = this.visualObject(targetId) ?? actorObject;
     if (!target) return;
-    if ((targetId && !target.visible) || (actorObject && !actorObject.visible && actorId !== useGameStore.getState().selfId)) return;
+    if ((targetId && !target.visible && !(kind === "wrong" && actorObject?.visible)) || (actorObject && !actorObject.visible && actorId !== useGameStore.getState().selfId)) return;
     if (kind === "eat" && actor) {
       if (isSpriteSpecies(actor.speciesId) && hasSnatchSprite(actor.speciesId)) {
         const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
         this.playSpeciesSnatch(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1);
       }
       this.floatEffect(target.x, target.y - 30, "냠!", "#fff099");
-    } else if (kind === "wrong" && actor) {
-      if (isSpriteSpecies(actor.speciesId) && hasSnatchSprite(actor.speciesId)) {
-        const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
-        this.playSpeciesSnatch(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1);
-      } else if (isSpriteSpecies(actor.speciesId) && hasSickSprite(actor.speciesId)) {
-        const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
-        if (actor.speciesAction !== "sick") this.playSpeciesSick(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1, Math.max(500, (player?.wrongUntil ?? Date.now() + 2000) - Date.now()));
+    } else if (kind === "wrong" && (actor || animalActor)) {
+      if (actor) {
+        if (isSpriteSpecies(actor.speciesId) && hasSnatchSprite(actor.speciesId)) {
+          const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
+          this.playSpeciesSnatch(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1);
+        } else if (isSpriteSpecies(actor.speciesId) && hasSickSprite(actor.speciesId)) {
+          const player = useGameStore.getState().snapshot.players.find((entry) => entry.id === actorId);
+          if (actor.speciesAction !== "sick") this.playSpeciesSick(actor, actor.speciesId, player?.facingX ?? 0, player?.facingY ?? 1, Math.max(500, (player?.wrongUntil ?? Date.now() + 2000) - Date.now()));
+        } else {
+          this.tweens.add({ targets: actor.emoji, angle: { from: -16, to: 16 }, duration: 70, repeat: 4, yoyo: true, onComplete: () => actor.emoji.setAngle(0) });
+        }
       } else {
-        this.tweens.add({ targets: actor.emoji, angle: { from: -16, to: 16 }, duration: 70, repeat: 4, yoyo: true, onComplete: () => actor.emoji.setAngle(0) });
+        this.tweens.add({ targets: animalActor!.container, angle: { from: -8, to: 8 }, duration: 75, repeat: 4, yoyo: true, onComplete: () => animalActor!.container.setAngle(0) });
       }
-      this.floatEffect(target.x, target.y - 30, "우욱…", "#e5b7ff");
+      const effectTarget = actorObject ?? target;
+      this.floatEffect(effectTarget.x, effectTarget.y - 30, "우욱…", "#e5b7ff");
     } else if (kind === "population") {
       this.floatEffect(target.x, target.y - 45, delta >= 0 ? `+${delta}` : `${delta}`, delta >= 0 ? "#fff099" : "#ffaaa0");
     } else if (kind === "blocked") {
@@ -484,6 +500,17 @@ export class GameScene extends Phaser.Scene {
       }
     } else {
       this.setSpeciesSprite(visual.emoji, speciesId, 54);
+    }
+  }
+
+  private updateCaterpillarShieldVisual(visual: PlayerVisual, speciesId: string, shielded: boolean): void {
+    const curled = speciesId === "caterpillar" && shielded;
+    if (curled) {
+      visual.emoji.setTint(0x858585);
+      visual.speciesSprite.setTint(0x858585);
+    } else {
+      visual.emoji.clearTint();
+      visual.speciesSprite.clearTint();
     }
   }
 

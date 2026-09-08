@@ -5,6 +5,7 @@ import {
   MODE4_REFLECTION_PROMPT,
   type QuizProgress,
   type QuizReveal,
+  type ReflectionProgressEntry,
   type ReflectionProgress,
 } from "@feed-chain/shared";
 import { PixelSpeciesIcon } from "../components/PixelSpeciesIcon";
@@ -32,27 +33,51 @@ function QuizProgressDots({ index }: { index: number }): JSX.Element {
   );
 }
 
+function normalizeQuizAnswer(value: string): string {
+  return value.trim().replace(/\s+/g, "").toLocaleLowerCase();
+}
+
 function StudentQuiz({ questionIndex, revealed, reveal }: { questionIndex: number; revealed: boolean; reveal: QuizReveal | null }): JSX.Element {
   const question = MODE4_QUIZ_QUESTIONS[questionIndex] ?? MODE4_QUIZ_QUESTIONS[0]!;
   const savedAnswer = useGameStore((state) => state.quizAnswer);
   const [choice, setChoice] = useState<number | null>(null);
+  const [textAnswer, setTextAnswer] = useState("");
+  const [textSubmitted, setTextSubmitted] = useState(false);
 
   useEffect(() => {
     setChoice(null);
+    setTextAnswer("");
+    setTextSubmitted(false);
   }, [questionIndex]);
 
   useEffect(() => {
-    if (savedAnswer?.questionIndex === questionIndex && savedAnswer.optionIndex >= 0) setChoice(savedAnswer.optionIndex);
-  }, [questionIndex, savedAnswer?.questionIndex, savedAnswer?.optionIndex]);
+    if (savedAnswer?.questionIndex !== questionIndex || savedAnswer.optionIndex < 0) return;
+    if (question.kind === "text" && savedAnswer.answer !== undefined) {
+      setTextAnswer(savedAnswer.answer);
+      setTextSubmitted(true);
+    } else if (question.kind === "choice") {
+      setChoice(savedAnswer.optionIndex);
+    }
+  }, [question, questionIndex, savedAnswer?.answer, savedAnswer?.optionIndex, savedAnswer?.questionIndex]);
 
   const submit = (optionIndex: number) => {
     if (revealed || choice !== null) return;
     setChoice(optionIndex);
     sendQuizAnswer(question.id, optionIndex);
   };
-  const answered = choice !== null;
+  const submitText = (): void => {
+    if (revealed || textSubmitted) return;
+    const answer = textAnswer.trim();
+    if (!answer) return;
+    setTextAnswer(answer);
+    setTextSubmitted(true);
+    sendQuizAnswer(question.id, answer);
+  };
+  const answered = question.kind === "text" ? textSubmitted : choice !== null;
   const hasReveal = revealed && reveal?.questionIndex === questionIndex;
-  const correct = hasReveal && choice === reveal?.correctOption;
+  const correct = hasReveal && (question.kind === "text"
+    ? normalizeQuizAnswer(textAnswer) === normalizeQuizAnswer(reveal?.correctAnswer ?? question.correctAnswer ?? "")
+    : choice === reveal?.correctOption);
 
   return (
     <main className="mode4-review-screen student-review-screen">
@@ -61,26 +86,42 @@ function StudentQuiz({ questionIndex, revealed, reveal }: { questionIndex: numbe
         <QuizProgressDots index={questionIndex} />
         <div className="quiz-question-number">QUESTION {String(questionIndex + 1).padStart(2, "0")}</div>
         <h2>{question.prompt}</h2>
-        <div className="quiz-options">
-          {question.options.map((option, optionIndex) => {
-            const selected = choice === optionIndex;
-            const isCorrect = hasReveal && reveal?.correctOption === optionIndex;
-            const isWrong = hasReveal && selected && !isCorrect;
-            return (
-              <button
-                key={option}
-                type="button"
-                className={`quiz-option ${selected ? "selected" : ""} ${isCorrect ? "correct" : ""} ${isWrong ? "wrong" : ""}`}
-                disabled={answered || hasReveal}
-                onClick={() => submit(optionIndex)}
-              >
-                <b>{String.fromCharCode(65 + optionIndex)}</b>
-                <span>{option}</span>
-                {isCorrect && <em>정답</em>}
-              </button>
-            );
-          })}
-        </div>
+        {question.kind === "text" ? (
+          <div className="quiz-text-answer">
+            <input
+              type="text"
+              value={textAnswer}
+              maxLength={80}
+              placeholder="정답을 입력하세요"
+              disabled={answered || hasReveal}
+              onChange={(event) => setTextAnswer(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") submitText(); }}
+              aria-label="주관식 답변"
+            />
+            <button type="button" disabled={!textAnswer.trim() || answered || hasReveal} onClick={submitText}>제출</button>
+          </div>
+        ) : (
+          <div className="quiz-options">
+            {question.options.map((option, optionIndex) => {
+              const selected = choice === optionIndex;
+              const isCorrect = hasReveal && reveal?.correctOption === optionIndex;
+              const isWrong = hasReveal && selected && !isCorrect;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className={`quiz-option ${selected ? "selected" : ""} ${isCorrect ? "correct" : ""} ${isWrong ? "wrong" : ""}`}
+                  disabled={answered || hasReveal}
+                  onClick={() => submit(optionIndex)}
+                >
+                  <b>{String.fromCharCode(65 + optionIndex)}</b>
+                  <span>{option}</span>
+                  {isCorrect && <em>정답</em>}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className={`quiz-feedback ${hasReveal ? (correct ? "is-correct" : "is-wrong") : ""}`}>
           {!answered && "답을 하나 골라 보세요."}
           {answered && !hasReveal && "답을 골랐어요. 선생님이 함께 확인할 거예요."}
@@ -95,6 +136,8 @@ function StudentQuiz({ questionIndex, revealed, reveal }: { questionIndex: numbe
 function QuizTeacherBoard({ questionIndex, revealed, progress }: { questionIndex: number; revealed: boolean; progress: QuizProgress | null }): JSX.Element {
   const question = MODE4_QUIZ_QUESTIONS[questionIndex] ?? MODE4_QUIZ_QUESTIONS[0]!;
   const answers = progress?.answers ?? [];
+  const submittedAnswers = answers.filter((answer) => answer.optionIndex !== null);
+  const textAnswers = submittedAnswers.filter((answer) => Boolean(answer.answer?.trim()));
   const counts = useMemo(() => question.options.map((_, optionIndex) => answers.filter((answer) => answer.optionIndex === optionIndex).length), [answers, question]);
   return (
     <section className="quiz-teacher-board">
@@ -103,8 +146,17 @@ function QuizTeacherBoard({ questionIndex, revealed, progress }: { questionIndex
         <h2>{question.prompt}</h2>
         <small>{revealed ? question.explanation : "학생들이 답을 고르면 여기에서 확인할 수 있어요."}</small>
       </div>
-      <div className="quiz-answer-grid">
-        {question.options.map((option, optionIndex) => (
+      <div className={`quiz-answer-grid ${question.kind === "text" ? "quiz-text-answer-grid" : ""}`}>
+        {question.kind === "text" ? (
+          <>
+            <div className="quiz-text-answer-heading"><span>학생 답변</span><strong>{textAnswers.length}명</strong></div>
+            <div className="quiz-text-answer-list">
+              {textAnswers.map((answer) => <div key={answer.playerId}><span>{answer.playerName}</span><strong>{answer.answer}</strong></div>)}
+              {!textAnswers.length && <small>아직 제출한 답변이 없어요.</small>}
+            </div>
+            {revealed && question.correctAnswer && <div className="quiz-text-correct-answer"><small>정답</small><strong>{question.correctAnswer}</strong></div>}
+          </>
+        ) : question.options.map((option, optionIndex) => (
           <div key={option} className={`quiz-answer-row ${revealed && optionIndex === question.correctOption ? "answer-key" : ""}`}>
             <b>{String.fromCharCode(65 + optionIndex)}</b>
             <span>{option}</span>
@@ -117,10 +169,10 @@ function QuizTeacherBoard({ questionIndex, revealed, progress }: { questionIndex
         <strong>{progress?.submittedCount ?? 0}명</strong>
         <small>/ {progress?.total ?? 0}명</small>
       </div>
-      <div className="quiz-answer-names">
-        {answers.filter((answer) => answer.optionIndex !== null).map((answer) => <span key={answer.playerId}>{answer.playerName} · {String.fromCharCode(65 + (answer.optionIndex ?? 0))}</span>)}
-        {!answers.some((answer) => answer.optionIndex !== null) && <small>아직 답을 고른 탐험대가 없어요.</small>}
-      </div>
+      {question.kind === "choice" && <div className="quiz-answer-names">
+        {submittedAnswers.map((answer) => <span key={answer.playerId}>{answer.playerName} · {String.fromCharCode(65 + (answer.optionIndex ?? 0))}</span>)}
+        {!submittedAnswers.length && <small>아직 답을 고른 탐험대가 없어요.</small>}
+      </div>}
     </section>
   );
 }
@@ -166,14 +218,59 @@ function StudentReflection(): JSX.Element {
   );
 }
 
+function ReflectionAnswerModal({ entry, onClose }: { entry: ReflectionProgressEntry; onClose: () => void }): JSX.Element {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="reflection-answer-backdrop" role="presentation" onClick={onClose}>
+      <section className="reflection-answer-modal" role="dialog" aria-modal="true" aria-labelledby="reflection-answer-title" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <h2 id="reflection-answer-title">{entry.playerName}의 기록</h2>
+          <button type="button" onClick={onClose} aria-label="기록 닫기">×</button>
+        </header>
+        <p>{entry.text}</p>
+      </section>
+    </div>
+  );
+}
+
 function TeacherReflection({ progress }: { progress: ReflectionProgress | null }): JSX.Element {
+  const [selectedEntry, setSelectedEntry] = useState<ReflectionProgressEntry | null>(null);
+
   return (
     <main className="mode4-review-screen teacher-review-screen reflection-teacher-screen">
       <ReviewHeader eyebrow="교사 진행 화면 · 학생 기록" title="알게 된 점 모아 보기" detail={`${progress?.submittedCount ?? 0}명 제출`} />
       <section className="reflection-list-board">
         <div className="reflection-list-heading"><span>탐험대 기록</span><small>{progress?.submittedCount ?? 0} / {progress?.total ?? 0}</small></div>
         <div className="reflection-list">
-          {(progress?.entries ?? []).map((entry) => <article key={entry.playerId} className={entry.submitted ? "submitted" : "waiting"}><strong>{entry.playerName}</strong><p>{entry.submitted ? entry.text : "작성 중…"}</p></article>)}
+          {(progress?.entries ?? []).map((entry) => {
+            const canOpen = entry.submitted && Boolean(entry.text.trim());
+            return (
+              <article
+                key={entry.playerId}
+                className={`${entry.submitted ? "submitted" : "waiting"} ${canOpen ? "clickable" : ""}`}
+                role={canOpen ? "button" : undefined}
+                tabIndex={canOpen ? 0 : undefined}
+                aria-label={canOpen ? `${entry.playerName}의 기록 크게 보기` : undefined}
+                onClick={() => { if (canOpen) setSelectedEntry(entry); }}
+                onKeyDown={(event) => {
+                  if (canOpen && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    setSelectedEntry(entry);
+                  }
+                }}
+              >
+                <strong>{entry.playerName}</strong>
+                <p>{entry.submitted ? entry.text : "작성 중…"}</p>
+              </article>
+            );
+          })}
           {!progress?.total && <p className="reflection-empty">학생이 들어오면 기록이 여기에 보여요.</p>}
         </div>
       </section>
@@ -181,6 +278,7 @@ function TeacherReflection({ progress }: { progress: ReflectionProgress | null }
         <button type="button" className="review-primary-action" onClick={() => sendTeacherCommand({ action: "reflection_finish" })}>수업 마무리</button>
         <button type="button" className="review-quiet-action" onClick={downloadClassResult}>기록 저장</button>
       </div>
+      {selectedEntry && <ReflectionAnswerModal entry={selectedEntry} onClose={() => setSelectedEntry(null)} />}
     </main>
   );
 }

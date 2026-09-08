@@ -56,6 +56,7 @@ export class AnimalNpcState extends Schema {
   @type("number") populationCount = 1;
   @type("number") respawnAt = 0;
   @type("number") ghostUntil = 0;
+  @type("number") wrongUntil = 0;
   @type("number") lastFoodAt = 0;
   @type("boolean") breedingEnabled = true;
   @type("boolean") fixed = false;

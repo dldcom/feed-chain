@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { isActivePlayPhase, isWebPhase, PHASE_LABELS } from "@feed-chain/shared";
 import { NoticeToast } from "./components/NoticeToast";
 import { RotateNotice } from "./components/RotateNotice";
+import { FullscreenButton } from "./components/FullscreenButton";
 import { reconnectClass } from "./network/gameClient";
 import { IntermissionScreen } from "./screens/IntermissionScreen";
 import { LandingScreen } from "./screens/LandingScreen";
@@ -48,6 +49,8 @@ export default function App(): JSX.Element {
   const isTeacherLobby = role === "teacher" && (phase === "lobby" || phase === "mode_setup" || phase === "role_reveal");
   const isTeacherResult = role === "teacher" && phase === "mode_result";
   const isTeacherReview = role === "teacher" && (phase === "mode4_quiz" || phase === "mode4_reflection" || phase === "lesson_complete");
+  const hasStudentGameHud = role === "student" && (phase === "role_reveal" || isActivePlayPhase(phase));
+  const hasTeacherPanel = role === "teacher" && !isTeacherLobby && !isTeacherResult && !isTeacherReview;
 
   useEffect(() => {
     if (!isGameTest && !room && sessionStorage.getItem("feed-chain-reconnection")) {
@@ -63,7 +66,8 @@ export default function App(): JSX.Element {
   if (!room) return <><LandingScreen />{connecting && <div className="reconnect-cover">생태계로 다시 연결 중…</div>}<RotateNotice /></>;
 
   return (
-    <div className={`app-shell ${role === "teacher" ? "teacher-mode" : "student-mode"} ${isTeacherResult || isTeacherReview ? "result-fullscreen" : ""}`}>
+    <div className={`app-shell ${role === "teacher" ? "teacher-mode" : "student-mode"} ${isTeacherResult || isTeacherReview ? "result-fullscreen" : ""} ${hasStudentGameHud ? "has-game-hud" : ""} ${hasTeacherPanel ? "has-teacher-panel" : ""}`}>
+      <FullscreenButton />
       <div className={isTeacherLobby ? "teacher-lobby-slot" : "screen-slot"}>
         <Suspense fallback={<IntermissionScreen title="생태계를 펼치는 중" copy="곧 탐험이 시작돼요." />}>
           {isTeacherLobby ? <TeacherLobbyScreen /> : <CurrentScreen />}
