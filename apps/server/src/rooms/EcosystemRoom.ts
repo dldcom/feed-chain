@@ -24,6 +24,7 @@ import {
   isSpeciesId,
   isWithinEatServerReach,
   modeConfig,
+  plantCountsForConsumers,
   isWebPhase,
   nextPhase,
   relationKey,
@@ -62,7 +63,7 @@ const EXPERIMENT_DURATION_MS = 3 * 60 * 1000;
 const PLANT_RESPAWN_MS = 12000;
 const CLASS_TTL_MS = 24 * 60 * 60 * 1000;
 const LOBBY_RECONNECT_WINDOW_MS = 10 * 60 * 1000;
-// 먹이를 못 찾았을 때 약 111초 후 hunger가 고갈되고, 모드별 굶주림 규칙은 별도로 적용한다.
+// hunger는 천천히 줄고, 2·4모드의 굶주림 판정은 modeConfig의 타이머로 적용한다.
 const HUNGER_PER_SECOND = 0.9;
 const CATERPILLAR_ESCAPE_MS = 1500;
 const CATERPILLAR_ESCAPE_SPEED = 1.3;
@@ -553,9 +554,10 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     target.populationCount = Math.max(0, target.populationCount - 1);
     target.lastFoodAt = 0;
     const mode = this.currentMode;
+    const eatenRespawnDelayMs = mode?.npc.find((entry) => entry.species === target.species)?.eatenRespawnDelayMs ?? mode?.respawnDelayMs ?? 3000;
     if (target.populationCount > 0) {
       target.status = "respawning";
-      target.respawnAt = now + (mode?.respawnDelayMs ?? 3000);
+      target.respawnAt = now + eatenRespawnDelayMs;
       target.ghostUntil = 0;
     } else if (target.fixed && mode?.npc.some((entry) => entry.species === target.species && !entry.respawnWhenExtinct)) {
       target.status = "extinct";
@@ -565,7 +567,7 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
     } else {
       target.status = "ghost";
       target.respawnAt = 0;
-      target.ghostUntil = now + (mode?.ghostDurationMs ?? GHOST_DURATION_MS);
+      target.ghostUntil = now + eatenRespawnDelayMs;
     }
     this.broadcast("action_effect", { kind: "population", actorId: target.id, delta: -1, species: target.species as SpeciesId });
   }
@@ -1164,10 +1166,21 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
   }
 
   private seedModePlants(mode: GameModeConfig): void {
+    const consumerCounts: Partial<Record<SpeciesId, number>> = {};
+    const addConsumer = (species: string, count: number): void => {
+      if (!isPlayableSpeciesId(species)) return;
+      consumerCounts[species] = (consumerCounts[species] ?? 0) + Math.max(0, Math.floor(count));
+    };
+    this.state.players.forEach((player) => {
+      if (player.status === "active") addConsumer(player.species, 1);
+    });
+    mode.npc.forEach((entry) => addConsumer(entry.species, entry.count));
+    const plantCounts = plantCountsForConsumers(mode, consumerCounts, PLANT_SPAWN_POINTS.length);
+    const maxPlantEntities = Math.min(mode.maxPlantEntities, PLANT_SPAWN_POINTS.length);
     let index = 0;
     mode.producerSpecies.forEach((species) => {
-      const requested = Math.max(0, mode.plantCounts[species] ?? 0);
-      for (let count = 0; count < requested && index < mode.maxPlantEntities; count += 1) {
+      const requested = Math.max(0, plantCounts[species] ?? 0);
+      for (let count = 0; count < requested && index < maxPlantEntities; count += 1) {
         const point = PLANT_SPAWN_POINTS[index % PLANT_SPAWN_POINTS.length] ?? PLANT_SPAWN_POINTS[0];
         const plant = new PlantState();
         plant.id = `plant-${index}`;
@@ -1653,7 +1666,6 @@ export class EcosystemRoom extends Room<{ state: GameState; input: MoveInput }> 
           player.ghostUntil = now + this.currentMode.ghostDurationMs;
         }
         player.lastFoodAt = now;
-        this.broadcast("notice", { kind: "warning", text: `${player.name}의 ${SPECIES[player.species as PlayableSpeciesId].name}가 먹이를 찾지 못했어요.` });
       }
     }
   }

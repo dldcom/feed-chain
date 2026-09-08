@@ -270,11 +270,6 @@ button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .55; }
 .manual-role-picker button .pixel-species-icon { width: 32px; height: 32px; }
 .manual-role-picker button.active { border-color: #ffe16d; background: #4d7656; }
 .time-adjust { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-.balance-watch { display: grid; gap: 7px; padding: 12px; border: 2px solid #477a62; border-radius: 15px; background: #0d241dbb; }
-.balance-watch > strong { font-family: "Mona12"; color: #ffe786; }
-.balance-watch > div { display: flex; justify-content: space-between; font-size: 12px; }
-.balance-watch b { color: #aee8b2; }
-.balance-watch small { color: #86a696; font-size: 9px; line-height: 1.45; }
 
 .food-web-screen { display: flex; flex-direction: column; padding: 18px 26px 14px; background: radial-gradient(circle at center, #315f53, #102923 75%); }
 .web-header { display: grid; grid-template-columns: 1fr auto 180px; align-items: center; gap: 25px; min-height: 75px; }
@@ -515,7 +510,7 @@ button:focus-visible { outline: 4px solid #fff2a3; outline-offset: 3px; }
 .pause-curtain { background: #08251edb; backdrop-filter: none; }
 
 .teacher-console { background: #0b2d25; border-left-color: #061b16; box-shadow: -8px 0 0 #061b16; }
-.teacher-console-header, .player-roster, .species-picker, .manual-role-picker, .balance-watch {
+.teacher-console-header, .player-roster, .species-picker, .manual-role-picker {
   border-radius: 5px;
   border-color: #174b39;
   background: #123a2f;

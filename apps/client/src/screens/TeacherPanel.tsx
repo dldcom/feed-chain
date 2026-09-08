@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { GAME_MODE_IDS, GAME_PHASES, MAX_STUDENT_COUNT, PHASE_LABELS, PLAYABLE_SPECIES, SPECIES, isPlayableSpeciesId, modeConfig, type GameModeId, type SpeciesId } from "@feed-chain/shared";
-import { downloadClassResult, leaveClass, sendTeacherCommand } from "../network/gameClient";
+import { leaveClass, sendTeacherCommand } from "../network/gameClient";
 import { useGameStore } from "../store/gameStore";
 import { PixelSpeciesIcon } from "../components/PixelSpeciesIcon";
 
@@ -12,10 +12,6 @@ export function TeacherPanel(): JSX.Element {
   const [selectedMode, setSelectedMode] = useState<GameModeId>("chain_observe");
   const [removedModeSpecies, setRemovedModeSpecies] = useState<SpeciesId>("frog");
   const selectedPlayer = snapshot.players.find((player) => player.id === selectedPlayerId);
-  const attempts = snapshot.players.reduce((sum, player) => sum + player.eatAttempts, 0);
-  const successes = snapshot.players.reduce((sum, player) => sum + player.successfulEats, 0);
-  const livesEnded = snapshot.players.reduce((sum, player) => sum + player.livesEnded, 0);
-  const survivalMs = snapshot.players.reduce((sum, player) => sum + player.survivalMs, 0);
   const modePickerVisible = snapshot.phase === "lobby" || snapshot.phase === "role_reveal" || snapshot.phase === "mode_setup" || snapshot.phase === "mode_result";
   const selectedModeConfig = modeConfig(selectedMode, selectedMode === "web_removal" ? removedModeSpecies : undefined);
 
@@ -99,16 +95,6 @@ export function TeacherPanel(): JSX.Element {
         </section>
       )}
 
-      {(snapshot.phase === "mode_play" || snapshot.phase === "mode_result" || snapshot.phase === "round_1" || snapshot.phase === "round_2" || snapshot.phase === "web_review_1" || snapshot.phase === "web_review_2") && (
-        <section className="balance-watch">
-          <strong>교사용 밸런스 관찰</strong>
-          <div><span>먹기 성공률</span><b>{attempts ? Math.round((successes / attempts) * 100) : 0}%</b></div>
-          <div><span>잡힌 횟수</span><b>{livesEnded}회</b></div>
-          <div><span>평균 생존</span><b>{livesEnded ? Math.round(survivalMs / livesEnded / 1000) : 0}초</b></div>
-          <small>학생 화면에는 표시되지 않는 수업 운영용 기록입니다.</small>
-        </section>
-      )}
-
       <div className="teacher-actions">
         {canAssign && <button className="teacher-primary" disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "assign_roles" })}>자동 배정하기</button>}
         {canAssign && <button disabled={!snapshot.players.length} onClick={() => sendTeacherCommand({ action: "reveal_roles" })}>현재 역할로 공개</button>}
@@ -127,7 +113,6 @@ export function TeacherPanel(): JSX.Element {
             })}>현재 활동 마치기</button>
           </>
         )}
-        <button onClick={downloadClassResult}>기록 저장</button>
         <button className="quiet-button" onClick={() => void leaveClass()}>나가기</button>
       </div>
     </aside>

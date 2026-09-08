@@ -249,7 +249,7 @@ export class GameScene extends Phaser.Scene {
       visual.container.setAlpha(player.status === "ghost" || player.status === "respawning" ? 0.45 : player.status === "extinct" ? 0.2 : player.stealth ? 0.25 : 1);
       visual.container.setScale(player.shielded ? 0.82 : 1);
       visual.container.setVisible(
-        player.id === selfId || canSeeThroughCover(viewerX, viewerY, renderPosition.x, renderPosition.y),
+        player.id === selfId || (player.status !== "ghost" && canSeeThroughCover(viewerX, viewerY, renderPosition.x, renderPosition.y)),
       );
       visual.status.setText(player.wrongUntil > Date.now() ? "배탈" : player.shielded ? "방어" : player.escapeUntil > Date.now() ? "탈출" : player.status === "respawning" ? "재등장" : player.status === "ghost" ? "관찰자" : player.status === "extinct" ? "관찰 중" : "");
       if (isSpriteSpecies(player.species) && hasSickSprite(player.species) && player.wrongUntil > Date.now()) {
@@ -343,7 +343,7 @@ export class GameScene extends Phaser.Scene {
       visual.population.setY(isSpriteSpecies(animal.species) ? -58 : -43);
       visual.population.setText(`X${Math.max(0, animal.populationCount)}`);
       visual.container.setAlpha(animal.status === "ghost" || animal.status === "respawning" ? 0.45 : animal.extinct ? 0.2 : 1);
-      visual.container.setVisible(canSeeThroughCover(viewerX, viewerY, animal.x, animal.y));
+      visual.container.setVisible(animal.status !== "ghost" && canSeeThroughCover(viewerX, viewerY, animal.x, animal.y));
       visual.container.x = Phaser.Math.Linear(visual.container.x, visual.targetX, 0.35);
       visual.container.y = Phaser.Math.Linear(visual.container.y, visual.targetY, 0.35);
     });

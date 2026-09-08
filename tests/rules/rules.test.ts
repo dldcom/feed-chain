@@ -18,6 +18,7 @@ import {
   isWithinEatReach,
   isWithinEatServerReach,
   modeConfig,
+  plantCountsForConsumers,
   roleQuotaForMode,
   roleSlotsForMode,
   simulateEcosystem,
@@ -89,15 +90,35 @@ describe("먹이 관계 규칙", () => {
     expect(GAME_MODE_CONFIGS.chain_observe.activeSpecies).toEqual(["hawk", "frog", "caterpillar", "clover"]);
     expect(GAME_MODE_CONFIGS.chain_removal.durationMs).toBe(3 * 60 * 1000);
     expect(GAME_MODE_CONFIGS.chain_removal.playableSpecies).toEqual(["hawk", "caterpillar"]);
-    expect(GAME_MODE_CONFIGS.chain_removal.npc).toEqual([{ species: "frog", count: 1, breedingEnabled: true, respawnWhenExtinct: true }]);
-    expect(GAME_MODE_CONFIGS.chain_removal.starvationTimeoutMs).toBe(60 * 1000);
+    expect(GAME_MODE_CONFIGS.chain_removal.npc).toEqual([{ species: "frog", count: 1, breedingEnabled: true, respawnWhenExtinct: true, eatenRespawnDelayMs: 20 * 1000 }]);
+    expect(GAME_MODE_CONFIGS.chain_removal.starvationTimeoutMs).toBe(30 * 1000);
     expect(GAME_MODE_CONFIGS.chain_removal.respawnDelayMs).toBe(3000);
     expect(GAME_MODE_CONFIGS.chain_removal.starvationRespawnDelayMs).toBe(10000);
     expect(GAME_MODE_CONFIGS.chain_removal.ghostDurationMs).toBe(10000);
+    expect(GAME_MODE_CONFIGS.chain_observe.plantCounts).toEqual({ clover: 38 });
+    expect(GAME_MODE_CONFIGS.chain_removal.plantCounts).toEqual({ clover: 49 });
     expect(GAME_MODE_CONFIGS.web_observe.durationMs).toBe(5 * 60 * 1000);
     expect(GAME_MODE_CONFIGS.web_observe.activeSpecies).toHaveLength(14);
+    expect(GAME_MODE_CONFIGS.web_observe.plantCounts).toEqual({ acorn: 5, grass: 15, berry: 12, clover: 13 });
     expect(GAME_MODE_CONFIGS.web_removal.durationMs).toBe(3 * 60 * 1000);
-    expect(GAME_MODE_CONFIGS.web_removal.starvationTimeoutMs).toBe(60 * 1000);
+    expect(GAME_MODE_CONFIGS.web_removal.starvationTimeoutMs).toBe(30 * 1000);
+  });
+
+  it("생산자 슬롯을 실제로 먹을 수 있는 동물 수에 맞춰 배분한다", () => {
+    expect(plantCountsForConsumers(GAME_MODE_CONFIGS.chain_removal, { hawk: 3, caterpillar: 21 }, 49)).toEqual({ clover: 49 });
+    expect(plantCountsForConsumers(GAME_MODE_CONFIGS.web_observe, {
+      squirrel: 4,
+      grasshopper: 4,
+      rabbit: 3,
+      caterpillar: 3,
+      bulbul: 2,
+      duck: 2,
+      snake: 2,
+      frog: 1,
+      hawk: 2,
+      weasel: 1,
+    }, 49)).toEqual({ acorn: 5, grass: 15, berry: 12, clover: 13 });
+    expect(plantCountsForConsumers(modeConfig("web_removal", "squirrel"), { squirrel: 0, grasshopper: 4, rabbit: 3, caterpillar: 3, bulbul: 2, duck: 2 }, 49).acorn).toBe(0);
   });
 
   it("먹이그물 제거 모드는 선택한 종과 그 먹이·포식자 관계를 함께 뺀다", () => {

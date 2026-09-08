@@ -27,6 +27,8 @@ export interface ModeNpcConfig {
   breedingEnabled: boolean;
   /** Some experiments intentionally keep a species at zero after extinction. */
   respawnWhenExtinct: boolean;
+  /** Delay before this NPC returns after being eaten. */
+  eatenRespawnDelayMs: number;
 }
 
 export interface GameModeConfig {
@@ -46,13 +48,14 @@ export interface GameModeConfig {
   /** A value of zero disables starvation for the mode. */
   starvationTimeoutMs: number;
   respawnDelayMs: number;
-  /** Respawn delay when the one-minute starvation rule ends a life. */
+  /** Respawn delay when the starvation rule ends a life. */
   starvationRespawnDelayMs: number;
   ghostDurationMs: number;
   plantRespawnMs: number;
+  /** Full-class baseline; the server scales this by actual food consumers. */
   plantCounts: Partial<Record<SpeciesId, number>>;
   npc: readonly ModeNpcConfig[];
-  /** Maximum number of plant entities created by the mode. */
+  /** Maximum number of plant entities created by the mode and map. */
   maxPlantEntities: number;
 }
 
@@ -137,6 +140,60 @@ export function roleSlotsForMode(mode: Pick<GameModeConfig, "id" | "playableSpec
   return slots;
 }
 
+/** Initial plant slots per animal that can eat at least one producer. */
+export const PLANT_SLOTS_PER_CONSUMER = 2.5;
+
+/**
+ * Allocate producer slots from the actual number of animals that can eat each
+ * producer.  A consumer that can eat multiple producers contributes to each
+ * producer's weight, while the total slot budget counts that animal once.
+ */
+export function plantCountsForConsumers(
+  mode: Pick<GameModeConfig, "producerSpecies" | "relations" | "maxPlantEntities">,
+  consumerCounts: Readonly<Partial<Record<SpeciesId, number>>>,
+  maxSpawnSlots: number,
+): Partial<Record<SpeciesId, number>> {
+  const counts: Partial<Record<SpeciesId, number>> = {};
+  mode.producerSpecies.forEach((species) => { counts[species] = 0; });
+
+  const consumers = Object.entries(consumerCounts)
+    .map(([species, count]) => ({
+      species: species as SpeciesId,
+      count: Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0,
+    }))
+    .filter((consumer) => consumer.count > 0);
+  const canEatProducer = (consumerSpecies: SpeciesId, producerSpecies: SpeciesId): boolean =>
+    mode.relations.some((edge) => edge.prey === producerSpecies && edge.predator === consumerSpecies);
+  const producerWeights = mode.producerSpecies.map((species) => ({
+    species,
+    weight: consumers.reduce((total, consumer) => total + (canEatProducer(consumer.species, species) ? consumer.count : 0), 0),
+  }));
+  const foodConsumerCount = consumers
+    .filter((consumer) => mode.producerSpecies.some((species) => canEatProducer(consumer.species, species)))
+    .reduce((total, consumer) => total + consumer.count, 0);
+  const weightTotal = producerWeights.reduce((total, producer) => total + producer.weight, 0);
+  const entityLimit = Math.max(0, Math.floor(mode.maxPlantEntities));
+  const spawnLimit = Math.max(0, Math.floor(maxSpawnSlots));
+  const targetSlots = Math.min(entityLimit, spawnLimit, Math.ceil(foodConsumerCount * PLANT_SLOTS_PER_CONSUMER));
+  if (!targetSlots || !weightTotal) return counts;
+
+  const allocations = producerWeights.map((producer) => {
+    const exact = (targetSlots * producer.weight) / weightTotal;
+    return { ...producer, base: Math.floor(exact), remainder: exact - Math.floor(exact) };
+  });
+  let assigned = 0;
+  allocations.forEach((allocation) => {
+    counts[allocation.species] = allocation.base;
+    assigned += allocation.base;
+  });
+  const remainderOrder = [...allocations].sort((a, b) => b.remainder - a.remainder);
+  for (let index = 0; index < targetSlots - assigned; index += 1) {
+    const allocation = remainderOrder[index % remainderOrder.length];
+    if (allocation) counts[allocation.species] = (counts[allocation.species] ?? 0) + 1;
+  }
+  return counts;
+}
+
 const chainSpecies: readonly SpeciesId[] = ["hawk", "frog", "caterpillar", "clover"];
 const chainPlayers: readonly PlayableSpeciesId[] = ["hawk", "frog", "caterpillar"];
 const webPlayers: readonly PlayableSpeciesId[] = [
@@ -165,9 +222,9 @@ export const GAME_MODE_CONFIGS: Record<GameModeId, GameModeConfig> = {
     starvationRespawnDelayMs: 10000,
     ghostDurationMs: 10000,
     plantRespawnMs: 5000,
-    plantCounts: { clover: 28 },
+    plantCounts: { clover: 38 },
     npc: [],
-    maxPlantEntities: 36,
+    maxPlantEntities: 49,
   },
   chain_removal: {
     id: "chain_removal",
@@ -180,14 +237,14 @@ export const GAME_MODE_CONFIGS: Record<GameModeId, GameModeConfig> = {
     activeSpecies: chainSpecies,
     relations: relationsFor(chainSpecies),
     removedSpecies: "frog",
-    starvationTimeoutMs: 60 * 1000,
+    starvationTimeoutMs: 30 * 1000,
     respawnDelayMs: 3000,
     starvationRespawnDelayMs: 10000,
     ghostDurationMs: 10000,
     plantRespawnMs: 5000,
-    plantCounts: { clover: 28 },
-    npc: [{ species: "frog", count: 1, breedingEnabled: true, respawnWhenExtinct: true }],
-    maxPlantEntities: 36,
+    plantCounts: { clover: 49 },
+    npc: [{ species: "frog", count: 1, breedingEnabled: true, respawnWhenExtinct: true, eatenRespawnDelayMs: 20 * 1000 }],
+    maxPlantEntities: 49,
   },
   web_observe: {
     id: "web_observe",
@@ -204,9 +261,9 @@ export const GAME_MODE_CONFIGS: Record<GameModeId, GameModeConfig> = {
     starvationRespawnDelayMs: 10000,
     ghostDurationMs: 10000,
     plantRespawnMs: 5000,
-    plantCounts: { acorn: 18, grass: 22, berry: 14, clover: 24 },
+    plantCounts: { acorn: 5, grass: 15, berry: 12, clover: 13 },
     npc: [],
-    maxPlantEntities: 90,
+    maxPlantEntities: 49,
   },
   web_removal: {
     id: "web_removal",
@@ -218,14 +275,14 @@ export const GAME_MODE_CONFIGS: Record<GameModeId, GameModeConfig> = {
     producerSpecies: webProducers,
     activeSpecies: [...webPlayers, ...webProducers],
     relations: relationsFor([...webPlayers, ...webProducers]),
-    starvationTimeoutMs: 60 * 1000,
+    starvationTimeoutMs: 30 * 1000,
     respawnDelayMs: 3000,
     starvationRespawnDelayMs: 10000,
     ghostDurationMs: 10000,
     plantRespawnMs: 5000,
-    plantCounts: { acorn: 18, grass: 22, berry: 14, clover: 24 },
+    plantCounts: { acorn: 5, grass: 15, berry: 12, clover: 13 },
     npc: [],
-    maxPlantEntities: 90,
+    maxPlantEntities: 49,
   },
 };
 
