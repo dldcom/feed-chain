@@ -32,7 +32,8 @@ const SPECIES_SPRITES: Record<SpriteSpeciesId, SpeciesSpriteConfig> = {
     movementTexture: "grasshopper-walk",
     sickFile: "grasshopper-sick.png",
     sickTexture: "grasshopper-sick",
-    yOffset: 0,
+    scale: 0.35,
+    yOffset: 13,
   },
   caterpillar: {
     movementFile: "caterpillar-walk.png",
